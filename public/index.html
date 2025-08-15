@@ -1,37 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebSphere – 3D Web Map</title>
-
-  <!-- Firebase SDKs -->
-  <script defer src="/__/firebase/12.1.0/firebase-app-compat.js"></script>
-  <script defer src="/__/firebase/12.1.0/firebase-firestore-compat.js"></script>
-  <script defer src="/__/firebase/init.js"></script>
-
-  <!-- Three.js -->
-  <script defer src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
-
-  <!-- Styles -->
-  <link rel="stylesheet" href="style.css">
-  <style>
-    body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
-    #overlay {
-      position: absolute;
-      top: 10px; left: 10px;
-      background: rgba(255,255,255,0.8);
-      padding: 10px 20px;
-      border-radius: 6px;
-      z-index: 10;
-    }
-  </style>
+  <title>Graph Sites 3D</title>
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <div id="overlay">Loading WebSphere...</div>
-  <canvas id="webSphereCanvas"></canvas>
-  
-  <script defer src="firebase/init.js"></script>
-  <script src="app.js" defer></script>
+  <h1>Graph des sites</h1>
+  <script type="module" src="./src/app.js"></script>
 </body>
 </html>
