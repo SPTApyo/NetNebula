@@ -1,5 +1,5 @@
-import { getSites } from "./firebaseService.js";
-import { createTreeGraph } from "./treeGraph.js";
+import { getSites } from "./src/firebaseService.js";
+import { createTreeGraph } from "./src/treeGraph.js";
 
 async function main() {
   const sites = await getSites();
