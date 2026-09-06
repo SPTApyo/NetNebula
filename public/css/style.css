@@ -1,13 +1,669 @@
-body {
-  margin: 0;
-  overflow: hidden;
-  background-color: #000;
-  color: #fff;
-  font-family: sans-serif;
+/* NetNebula — the viewer.
+ *
+ * The graph is the object; the interface is an annotation laid straight onto
+ * the void. No container, no card, no frosted glass: only text anchored to the
+ * corners, over darkening gradients that keep it legible above a moving
+ * nebula.
+ *
+ * The chrome stays monochrome so that all the colour goes to the nodes, whose
+ * hue is derived from their domain (see hueOf in app.js).
+ */
+
+:root {
+    /* The background matches the WebGL scene exactly: the annotations float in
+       the same void as the graph, with no visible seam. */
+    --void: #04050c;
+
+    --ink: #eef1f8;
+    --ink-2: #98a0b6;
+    --ink-3: #5c6479;
+    --rule: #1c2130;
+
+    /* Blue end of the node palette: the focus ring belongs to the same world
+       as the nodes. */
+    --focus: #a8bfff;
+
+    --step: 8px;
+
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --display: "IBM Plex Sans", system-ui, sans-serif;
 }
-h1 {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 10;
+
+*,
+*::before,
+*::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    color-scheme: dark;
+}
+
+body {
+    background: var(--void);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* The surfaces the browser draws on our behalf are part of the design too:
+   without this, a system-blue selection cuts across the nebula. */
+::selection {
+    background: var(--focus);
+    color: var(--void);
+}
+
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--rule);
+    border: 3px solid var(--void);
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--ink-3);
+}
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--rule) transparent;
+}
+
+:focus-visible {
+    outline: 1px solid var(--focus);
+    outline-offset: 3px;
+}
+
+#orb {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+}
+
+/* Carries the two corner gradients that body cannot hold. */
+#veil {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+}
+
+/* -- anchors ------------------------------------------------------------- */
+
+#mark,
+#readout,
+#detail,
+#controls,
+#hint {
+    position: fixed;
+    z-index: 2;
+    /* The graph is handled with the mouse: the interface must not steal the
+       drags that pass over it. Each target re-enables its own clicks. */
+    pointer-events: none;
+}
+
+#mark {
+    top: calc(var(--step) * 4);
+    left: calc(var(--step) * 4);
+}
+
+#readout {
+    top: calc(var(--step) * 4);
+    right: calc(var(--step) * 4);
+    width: 218px;
+}
+
+#detail {
+    bottom: calc(var(--step) * 4);
+    left: calc(var(--step) * 4);
+    width: 300px;
+}
+
+/* The text block lets drags pass through to the graph; only its two genuinely
+   clickable targets intercept them. */
+#detail .d-link,
+#detail .d-close {
+    pointer-events: auto;
+}
+
+#controls {
+    bottom: calc(var(--step) * 4);
+    right: calc(var(--step) * 4);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: calc(var(--step) * 1.5);
+    pointer-events: auto;
+}
+
+#hint {
+    bottom: calc(var(--step) * 4);
+    left: 50%;
+    transform: translateX(-50%);
+    color: var(--ink-3);
+    font-size: 11px;
+    text-align: center;
+    white-space: nowrap;
+}
+
+/* Corner gradients: they stand in for panels. The text draws its contrast from
+   the void itself, not from a box laid over it.
+   With the camera close in, very bright nodes pass under the annotations: the
+   gradient has to stay dense across the whole text area before it opens up. */
+body::before,
+body::after {
+    content: "";
+    position: fixed;
+    z-index: 1;
+    width: 58vw;
+    height: 54vh;
+    pointer-events: none;
+}
+
+body::before {
+    top: 0;
+    left: 0;
+    background: radial-gradient(125% 125% at 0% 0%,
+        rgba(4, 5, 12, 0.97) 0%, rgba(4, 5, 12, 0.93) 30%,
+        rgba(4, 5, 12, 0.6) 58%, transparent 82%);
+}
+
+body::after {
+    bottom: 0;
+    right: 0;
+    background: radial-gradient(125% 125% at 100% 100%,
+        rgba(4, 5, 12, 0.97) 0%, rgba(4, 5, 12, 0.93) 30%,
+        rgba(4, 5, 12, 0.6) 58%, transparent 82%);
+}
+
+/* The two remaining corners. Four annotations, four gradients: covering only
+   the diagonal left the readout cut through by the nodes. */
+#veil::before,
+#veil::after {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    width: 58vw;
+    height: 54vh;
+    pointer-events: none;
+}
+
+#veil::before {
+    top: 0;
+    right: 0;
+    background: radial-gradient(125% 125% at 100% 0%,
+        rgba(4, 5, 12, 0.97) 0%, rgba(4, 5, 12, 0.93) 30%,
+        rgba(4, 5, 12, 0.6) 58%, transparent 82%);
+}
+
+#veil::after {
+    bottom: 0;
+    left: 0;
+    background: radial-gradient(125% 125% at 0% 100%,
+        rgba(4, 5, 12, 0.97) 0%, rgba(4, 5, 12, 0.93) 30%,
+        rgba(4, 5, 12, 0.6) 58%, transparent 82%);
+}
+
+/* Second line of defence where the gradient opens up: invisible over the void,
+   decisive when a star passes right behind a figure. */
+#mark,
+#readout,
+#detail,
+#controls,
+#hint {
+    text-shadow: 0 1px 4px rgba(4, 5, 12, 0.95),
+                 0 0 12px rgba(4, 5, 12, 0.8);
+}
+
+/* -- signature ----------------------------------------------------------- */
+
+#mark h1 {
+    font-family: var(--display);
+    font-size: clamp(26px, 4vw, 36px);
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    line-height: 1;
+}
+
+#mark p {
+    margin-top: calc(var(--step) * 0.75);
+    color: var(--ink-2);
+    font-size: 11px;
+}
+
+/* -- readouts ------------------------------------------------------------ */
+
+.row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: calc(var(--step) * 2);
+    padding: calc(var(--step) * 0.75) 0;
+    border-bottom: 1px solid var(--rule);
+}
+
+.k {
+    color: var(--ink-2);
+    font-size: 11px;
+}
+
+.v {
+    /* The figures line up in a column: this is a readout, not a sentence. */
+    font-variant-numeric: tabular-nums;
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+}
+
+#readout .row:first-child {
+    border-top: 1px solid var(--rule);
+}
+
+/* The map is honestly unfinished. This rule shows what is missing. */
+#survey {
+    margin-top: calc(var(--step) * 2);
+}
+
+#survey-rule {
+    height: 2px;
+    /* The track has to read over the nebula, otherwise the filled portion
+       looks like a broken underline rather than a proportion. */
+    background: #2b3245;
+}
+
+#survey-rule i {
+    display: block;
+    height: 100%;
+    background: var(--ink-2);
+    transform-origin: left;
+}
+
+#survey-note {
+    margin-top: calc(var(--step) * 0.75);
+    color: var(--ink-3);
+    font-size: 11px;
+}
+
+/* -- node detail --------------------------------------------------------- */
+
+#detail .d-title {
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    /* A title from the crawled web can be arbitrarily long. */
+    overflow-wrap: anywhere;
+}
+
+#detail .d-link {
+    display: block;
+    margin-top: calc(var(--step) * 0.5);
+    color: var(--ink-2);
+    font-size: 11px;
+    overflow-wrap: anywhere;
+    text-decoration-color: var(--rule);
+    text-underline-offset: 3px;
+}
+
+#detail .d-link:hover {
+    color: var(--focus);
+    text-decoration-color: currentColor;
+}
+
+#detail dl {
+    margin-top: calc(var(--step) * 2);
+}
+
+#detail .v {
+    font-size: 13px;
+}
+
+.d-close {
+    margin-top: calc(var(--step) * 1.5);
+}
+
+/* -- commandes ----------------------------------------------------------- */
+
+button {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--step);
+    border: 0;
+    background: none;
+    color: var(--ink-2);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    /* A 44px touch target with no visible box. */
+    padding: 11px 0;
+    transition: color 160ms ease;
+}
+
+button:hover {
+    color: var(--ink);
+}
+
+button span {
+    text-decoration: underline;
+    text-decoration-color: var(--rule);
+    text-underline-offset: 4px;
+    transition: text-decoration-color 160ms ease;
+}
+
+button:hover span {
+    text-decoration-color: currentColor;
+}
+
+button[aria-pressed="true"] {
+    color: var(--ink);
+}
+
+kbd {
+    min-width: 18px;
+    padding: 1px 4px;
+    border: 1px solid var(--rule);
+    color: var(--ink-3);
+    font-family: inherit;
+    font-size: 10px;
+    line-height: 1.4;
+    text-align: center;
+}
+
+/* -- states -------------------------------------------------------------- */
+
+#overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--step);
+    padding: calc(var(--step) * 4);
+    background: var(--void);
+    text-align: center;
+}
+
+#overlay[hidden] {
+    display: none;
+}
+
+#overlay-eye {
+    color: var(--ink-3);
+    font-size: 11px;
+    min-height: 1.5em;
+}
+
+#overlay h2 {
+    max-width: 22ch;
+    font-family: var(--display);
+    font-size: clamp(24px, 4vw, 32px);
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1.1;
+    text-wrap: balance;
+}
+
+#overlay p:not(#overlay-eye) {
+    max-width: 46ch;
+    color: var(--ink-2);
+    text-wrap: pretty;
+}
+
+#overlay-action {
+    margin-top: calc(var(--step) * 2);
+    color: var(--ink);
+}
+
+/* -- noms des pages proches ------------------------------------------------ */
+
+#labels {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.label {
+    position: absolute;
+    top: 0;
+    left: 0;
+    /* The script places the anchor point under the cluster; all that is left
+       is to centre the name on it. */
+    translate: -50% 0;
+    white-space: nowrap;
+    /* A place name, not a data label: spaced out and understated, it reads
+       without competing for room with the points it names. */
+    font-size: 11px;
+    letter-spacing: 0.09em;
+    text-transform: lowercase;
+    /* The domain colour is set by the script: it is what ties the label to the
+       points, now that the side list is gone. */
+    color: var(--ink);
+    text-shadow: 0 1px 4px rgba(4, 5, 12, 0.95),
+                 0 0 10px rgba(4, 5, 12, 0.9);
+    transition: opacity 200ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .label { transition: none; }
+}
+
+/* -- search ---------------------------------------------------------------- */
+
+#finder {
+    position: fixed;
+    top: calc(var(--step) * 4);
+    left: calc(var(--step) * 4);
+    z-index: 3;
+    width: 240px;
+    margin-top: 74px;
+}
+
+#search {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--rule);
+    background: rgba(4, 5, 12, 0.72);
+    color: var(--ink);
+    font: inherit;
+    font-size: 12px;
+}
+
+#search::placeholder {
+    color: var(--ink-3);
+}
+
+#search:focus {
+    border-color: var(--focus);
+    outline: none;
+}
+
+#search-count {
+    margin-top: 5px;
+    color: var(--ink-3);
+    font-size: 11px;
+    min-height: 1em;
+}
+
+
+/* -- infobulle de survol -------------------------------------------------- */
+
+#tip {
+    position: fixed;
+    z-index: 4;
+    max-width: 40ch;
+    padding: 7px 10px;
+    border: 1px solid var(--rule);
+    background: rgba(4, 5, 12, 0.92);
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+}
+
+#tip .t-title {
+    display: block;
+    font-family: var(--display);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+#tip .t-url {
+    display: block;
+    margin-top: 2px;
+    color: var(--ink-2);
+    font-size: 11px;
+}
+
+/* Diagnostic readout, on ?debug only. */
+#debug {
+    position: fixed;
+    bottom: calc(var(--step) * 1.5);
+    left: 50%;
+    z-index: 5;
+    transform: translateX(-50%);
+    color: var(--ink-3);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+}
+
+
+/* -- opening ------------------------------------------------------------- */
+
+/* A single staged moment: the annotations rise while the first regions load.
+   Nothing else makes an entrance. */
+@keyframes rise {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+}
+
+#mark,
+#readout:not([hidden]),
+#controls:not([hidden]),
+#hint:not([hidden]) {
+    animation: rise 900ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+#readout:not([hidden]) { animation-delay: 120ms; }
+#controls:not([hidden]) { animation-delay: 220ms; }
+
+/* The hint withdraws once the map is in hand. Declared after the grouped rule
+   and at equal specificity, otherwise the first one would win. */
+#hint:not([hidden]) {
+    animation: rise 900ms cubic-bezier(0.16, 1, 0.3, 1) 320ms backwards,
+               fade 1200ms ease 9s forwards;
+}
+
+@keyframes fade {
+    to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 1ms !important;
+    }
+
+    #hint {
+        animation: none;
+    }
+}
+
+/* -- small screens -------------------------------------------------------- */
+
+@media (max-width: 760px) {
+    #mark {
+        top: calc(var(--step) * 2);
+        left: calc(var(--step) * 2);
+    }
+
+    #mark p {
+        max-width: 18ch;
+    }
+
+    #readout {
+        top: calc(var(--step) * 2);
+        right: calc(var(--step) * 2);
+        width: 138px;
+    }
+
+    #readout .v {
+        font-size: 13px;
+    }
+
+    #survey-note {
+        font-size: 10px;
+    }
+
+    /* The controls drop into a footer bar rather than floating in the middle
+       of the map, where they sat right on top of the nodes. */
+    #controls {
+        left: 0;
+        right: 0;
+        bottom: 0;
+        flex-direction: row;
+        justify-content: space-evenly;
+        align-items: center;
+        gap: 0;
+        padding: calc(var(--step) * 0.5) calc(var(--step) * 2)
+                 calc(var(--step) * 1.5);
+        background: linear-gradient(to top,
+            rgba(4, 5, 12, 0.94) 40%, transparent);
+    }
+
+    #controls kbd {
+        display: none;
+    }
+
+    #detail {
+        left: calc(var(--step) * 2);
+        right: calc(var(--step) * 2);
+        /* Above the control bar, never under it. */
+        bottom: calc(var(--step) * 8);
+        width: auto;
+    }
+
+    #detail .d-title {
+        font-size: 21px;
+    }
+
+    /* The hint repeats what a finger discovers in a second. */
+    #hint {
+        display: none;
+    }
+
+    body::before {
+        width: 100vw;
+        height: 34vh;
+    }
+
+    body::after {
+        display: none;
+    }
 }

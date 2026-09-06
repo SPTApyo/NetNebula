@@ -1,41 +1,84 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <title>Graph Sites 3D</title>
-  <link rel="stylesheet" href="css/style.css">
-  <script src="https://www.gstatic.com/firebasejs/9.24.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.24.0/firebase-firestore-compat.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetNebula — carte des liens du web</title>
+    <meta name="description" content="Une carte tridimensionnelle des liens entre les pages du web.">
+    <meta name="theme-color" content="#04050c">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='5' fill='%23ffe3ab'/%3E%3Ccircle cx='26' cy='7' r='2' fill='%23a8bfff'/%3E%3Ccircle cx='6' cy='23' r='2.5' fill='%23ff9f7a'/%3E%3C/svg%3E">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap">
+    <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <h1>Graph des sites</h1>
+    <canvas id="orb" aria-label="Carte tridimensionnelle des liens entre pages web" role="img"></canvas>
+    <div id="veil" aria-hidden="true"></div>
+    <div id="labels" aria-hidden="true"></div>
 
-  <script>
-    // Config Firebase
-    const firebaseConfig = {
-      apiKey: "AIzaSyC6v4zKmLOLv4YJWUskjiuTtbLzxjH87IE",
-      authDomain: "netnebula-eb9eb.firebaseapp.com",
-      projectId: "netnebula-eb9eb",
-      storageBucket: "netnebula-eb9eb.firebasestorage.app",
-      messagingSenderId: "131129019634",
-      appId: "1:131129019634:web:a996de12181fd134d0946b",
-      measurementId: "G-XJELSBSYK9"
-    };
+    <header id="mark">
+        <h1>NetNebula</h1>
+        <p>Une carte des liens du web</p>
+    </header>
 
-    // Initialisation
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
+    <search id="finder">
+        <input id="search" type="search" placeholder="Chercher une page"
+               autocomplete="off" spellcheck="false" aria-label="Chercher une page">
+        <p id="search-count" aria-live="polite"></p>
+    </search>
 
-    // Exemple : lecture d’une collection
-    db.collection("sites").get().then(snapshot => {
-      snapshot.forEach(doc => console.log(doc.id, doc.data()));
-    });
+    <section id="readout" aria-live="polite" aria-label="Étendue de la carte" hidden>
+        <div class="row"><span class="k">Pages</span><span class="v" id="stat-nodes">0</span></div>
+        <div class="row"><span class="k">Liens</span><span class="v" id="stat-links">0</span></div>
+        <div class="row"><span class="k">Domaines</span><span class="v" id="stat-domains">0</span></div>
+        <div id="survey" hidden>
+            <div id="survey-rule"><i></i></div>
+            <p id="survey-note"></p>
+        </div>
+    </section>
 
-    // Ici tu peux mettre tout ton code Three.js
-  </script>
+    <section id="detail" aria-live="polite" hidden>
+        <h2 class="d-title"></h2>
+        <a class="d-link" target="_blank" rel="noopener noreferrer"></a>
+        <dl>
+            <div class="row"><span class="k">Domaine</span><span class="v d-domain"></span></div>
+            <div class="row"><span class="k">Liens sortants</span><span class="v d-out"></span></div>
+            <div class="row"><span class="k">Liens entrants</span><span class="v d-in"></span></div>
+        </dl>
+        <button type="button" class="d-close">Fermer</button>
+    </section>
 
-  <!-- App.js ne doit plus être type module si tu veux accéder à firebase global -->
-  <script src="app.js"></script>
+    <nav id="controls" aria-label="Navigation dans la carte" hidden>
+        <button type="button" id="c-fit"><span>Tout voir</span><kbd>T</kbd></button>
+        <button type="button" id="c-random"><span>Au hasard</span><kbd>H</kbd></button>
+        <button type="button" id="c-pause"><span>Pause</span><kbd>P</kbd></button>
+    </nav>
+
+    <p id="hint" hidden>Glissez pour regarder · ZQSD pour voler · double-clic pour rejoindre</p>
+
+    <div id="tip" hidden>
+        <span class="t-title"></span>
+        <span class="t-url"></span>
+    </div>
+
+    <div id="overlay">
+        <h2 id="overlay-title">Ouverture de la carte</h2>
+        <p id="overlay-text">Un instant.</p>
+        <button type="button" id="overlay-action" hidden><span></span></button>
+    </div>
+
+    <!-- Pinned version + SRI: a compromised CDN cannot substitute its own
+         code. Regenerate the hashes on any version bump.
+         The graph rendering has no dependency at all: gl.js is raw WebGL2, and
+         the layout is computed once by the crawler. -->
+    <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app-compat.js"
+            integrity="sha384-v/lJoWOxqyu68q535xWEl/T+FG4PqMKgREbN2JclXD9GUqNhqDOW3JZ8/Z9pxYRx"
+            crossorigin="anonymous"></script>
+    <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore-compat.js"
+            integrity="sha384-wCRjvYUnpDWBXwF2TpPP9Z+dsWaQcjzhW3T5HFBnBOshNLxrUUZD5ccf/mIoMxXd"
+            crossorigin="anonymous"></script>
+    <script type="module" src="app.js"></script>
 </body>
 </html>
