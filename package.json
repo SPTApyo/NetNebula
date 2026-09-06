@@ -1,6 +1,21 @@
 {
-  "dependencies": {
-    "firebase": "^12.1.0",
-    "three": "^0.179.1"
-  }
+  "name": "netnebula",
+  "version": "1.0.0",
+  "description": "An interactive 3D map of the web showing websites and how they are connected.",
+  "private": true,
+  "scripts": {
+    "serve": "firebase emulators:start --only hosting",
+    "local": "npm run local:dir && firebase emulators:start --only firestore,hosting --project netnebula-local --import .emulator --export-on-exit .emulator",
+    "local:dir": "node -e \"require('fs').mkdirSync('.emulator',{recursive:true})\"",
+    "deploy": "firebase deploy --only hosting,firestore:rules"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SPTApyo/NetNebula.git"
+  },
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/SPTApyo/NetNebula/issues"
+  },
+  "homepage": "https://github.com/SPTApyo/NetNebula#readme"
 }
