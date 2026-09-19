@@ -113,7 +113,16 @@ def _env_flag(name, default):
 
 def quota_exhausted(error):
     """Recognize Firestore quota failures."""
-    return error.__class__.__name__ == "ResourceExhausted"
+    seen = set()
+    current = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if current.__class__.__name__ == "ResourceExhausted":
+            return True
+        if "quota exceeded" in str(current).lower():
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 # Seed domains, crawled without restriction. Links they carry to other domains
@@ -1274,7 +1283,7 @@ class Crawler:
                 logger.warning("Failed to load frontier cache; falling back to Firestore read.")
         if not cache_loaded:
             fields = ["url", "depth", "status", "outside", "host", "x", "y", "z"]
-            for doc in self.frontier.select(fields).stream():
+            for doc in self.frontier.select(fields).stream(retry=None):
                 self.seen.add(doc.id)
                 data = doc.to_dict() or {}
                 if data.get("status") == "pending" and data.get("url"):
@@ -1292,7 +1301,7 @@ class Crawler:
         # Wikipedia would start level with a brand new domain. The tally lives
         # in meta/stats, a document already written on every run -- a dedicated
         # collection would cost writes for nothing.
-        stats = (self.db.document("meta/stats").get().to_dict() or {})
+        stats = (self.db.document("meta/stats").get(retry=None).to_dict() or {})
         for domain, count in (stats.get("domain_pages") or {}).items():
             self.known[domain] = count
 
@@ -1378,7 +1387,7 @@ class Crawler:
 
     def _count(self, collection):
         # An aggregation query costs far less than streaming the collection.
-        return collection.count().get()[0][0].value
+        return collection.count().get(retry=None)[0][0].value
 
     # -- processing ---------------------------------------------------------
 
@@ -1640,7 +1649,7 @@ class Crawler:
 
     def write_stats(self):
         stats_doc = self.db.document("meta/stats")
-        existing = (stats_doc.get().to_dict() or {})
+        existing = (stats_doc.get(retry=None).to_dict() or {})
         domains = sorted(set(existing.get("domains", [])) | self.domains_touched)
 
         if not self.budget.can_spend(1):
@@ -1673,15 +1682,15 @@ class Crawler:
 
 
 def show_status(db):
-    pages = db.collection("pages").count().get()[0][0].value
+    pages = db.collection("pages").count().get(retry=None)[0][0].value
     frontier = db.collection("frontier")
-    total = frontier.count().get()[0][0].value
+    total = frontier.count().get(retry=None)[0][0].value
 
     from google.cloud.firestore_v1.base_query import FieldFilter
     pending = frontier.where(
-        filter=FieldFilter("status", "==", "pending")).count().get()[0][0].value
+        filter=FieldFilter("status", "==", "pending")).count().get(retry=None)[0][0].value
 
-    stats = (db.document("meta/stats").get().to_dict() or {})
+    stats = (db.document("meta/stats").get(retry=None).to_dict() or {})
 
     logger.info(f"pages crawled    : {pages}")
     logger.info(f"frontier total   : {total}")
@@ -1709,7 +1718,7 @@ def backfill(db):
     pages = {}
     for doc in (db.collection("pages")
                 .select(["url", "linked_to", "depth"])
-                .limit(PLACE_READ_LIMIT + 1).stream()):
+                .limit(PLACE_READ_LIMIT + 1).stream(retry=None)):
         data = doc.to_dict() or {}
         url = data.get("url", "")
         if not url:
@@ -1821,7 +1830,7 @@ def purge(db):
 
 def run_automatic(db):
     """Place pending pages, then spend the remaining quota crawling."""
-    stats = (db.document("meta/stats").get().to_dict() or {})
+    stats = (db.document("meta/stats").get(retry=None).to_dict() or {})
     placement_writes = 0
     if stats.get("layout_pending", True):
         logger.info("Pending layout takes priority over crawling.")
