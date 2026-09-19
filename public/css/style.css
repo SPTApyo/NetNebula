@@ -233,6 +233,12 @@ body::after {
 
 /* -- signature ----------------------------------------------------------- */
 
+.mark-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: calc(var(--step) * 1.5);
+}
+
 #mark h1 {
     font-family: var(--display);
     font-size: clamp(26px, 4vw, 36px);
@@ -251,7 +257,7 @@ body::after {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    margin-top: calc(var(--step) * 1.25);
+    margin-left: 2px;
     padding-bottom: 3px;
     border-bottom: 1px solid var(--rule);
     color: var(--ink-3);
