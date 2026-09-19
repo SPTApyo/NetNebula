@@ -225,8 +225,10 @@ TRACKING_PARAMS = {
 }
 
 
-# The Spark plan allows 20000 writes and 50000 reads per day. We deliberately
-# stop short of that, and pick up again on the next run.
+# Daily quota and placement limit.
+FIRESTORE_WRITE_QUOTA = _env_int("NN_FIRESTORE_WRITE_QUOTA", 20000)
+PLACE_WRITE_LIMIT = _env_int(
+    "NN_PLACE_WRITE_LIMIT", FIRESTORE_WRITE_QUOTA - 1)
 WRITE_BUDGET = _env_int("NN_WRITE_BUDGET", 18000)
 MAX_PAGES = _env_int("NN_MAX_PAGES", 500000)
 
@@ -242,6 +244,12 @@ MAX_PAGES = _env_int("NN_MAX_PAGES", 500000)
 # frontier is read in full at startup, one Firestore read per entry. The Spark
 # plan allows 50000 per day.
 MAX_FRONTIER = _env_int("NN_MAX_FRONTIER", 30000)
+FIRESTORE_READ_QUOTA = _env_int("NN_FIRESTORE_READ_QUOTA", 50000)
+PLACE_READ_LIMIT = _env_int(
+    "NN_PLACE_READ_LIMIT",
+    max(0, FIRESTORE_READ_QUOTA - MAX_FRONTIER - 1000),
+)
+AUTO_PLACE = _env_flag("NN_AUTO_PLACE", False)
 # A Wikipedia article carries three to four hundred content links. Keeping them
 # all yields a clump where no edge can be read any more; we keep the first
 # ones, which are those of the body text, and the graph becomes legible again.
@@ -1275,6 +1283,19 @@ class Crawler:
 
         self.page_count = self._count(self.pages)
 
+        if AUTO_PLACE:
+            write_room = max(0, FIRESTORE_WRITE_QUOTA - self.page_count - 1)
+            page_room = max(0, PLACE_READ_LIMIT - self.page_count - 1)
+            automatic_limit = min(
+                self.budget.limit,
+                (write_room * 2) // 3,
+                page_room * 2,
+            )
+            self.budget.limit = automatic_limit
+            logger.info(
+                f"Automatic placement reserve: {self.page_count} pages, "
+                f"crawl budget {automatic_limit} writes.")
+
         # Pages already taken count towards priority: without this, on restart,
         # Wikipedia would start level with a brand new domain. The tally lives
         # in meta/stats, a document already written on every run -- a dedicated
@@ -1693,7 +1714,9 @@ def backfill(db):
     """
     logger.info("Reading pages...")
     pages = {}
-    for doc in db.collection("pages").select(["url", "linked_to"]).stream():
+    for doc in (db.collection("pages")
+                .select(["url", "linked_to", "depth"])
+                .limit(PLACE_READ_LIMIT + 1).stream()):
         data = doc.to_dict() or {}
         url = data.get("url", "")
         if not url:
@@ -1703,15 +1726,23 @@ def backfill(db):
             "host": host_of(url),
             "domain": domain_of(url),
             "linked_to": data.get("linked_to", []),
+            "depth": data.get("depth", 9),
         }
+        if len(pages) > PLACE_READ_LIMIT:
+            raise SystemExit(
+                f"Placement needs at most {PLACE_READ_LIMIT} page reads; "
+                f"found more. Run --place separately after the crawl."
+            )
     if not pages:
         logger.info("No page to place.")
         return
+    if len(pages) + 1 > PLACE_WRITE_LIMIT:
+        raise SystemExit(
+            f"Placement needs {len(pages) + 1} writes, but only "
+            f"{PLACE_WRITE_LIMIT} are allowed. Increase the limit "
+            "or run --place on a separate quota window."
+        )
     print(f"{len(pages)} pages.")
-
-    depths = {}
-    for doc in db.collection("frontier").select(["depth"]).stream():
-        depths[doc.id] = (doc.to_dict() or {}).get("depth", 0)
 
     parents = url_tree(pages)
     virtual = (set(parents) | set(parents.values())) - set(pages)
@@ -1735,7 +1766,7 @@ def backfill(db):
             "host": page["host"],
             "x": p[0], "y": p[1], "z": p[2],
             "cell": cell_of(p),
-            "depth": depths.get(page_id, 9),
+            "depth": page["depth"],
             # The parent in the URL tree: this is the edge that carries the
             # structure, and the viewer draws it first. It may be a virtual
             # directory, absent from the database -- the viewer ignores those.

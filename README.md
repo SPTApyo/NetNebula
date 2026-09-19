@@ -87,11 +87,11 @@ Edit `scrapper/.env` to point `GOOGLE_APPLICATION_CREDENTIALS` or `NN_SERVICE_AC
 ```bash
 python scrapper/crawler.py            # starts crawling / resumes existing run
 python scrapper/crawler.py --status   # prints database statistics
-python scrapper/crawler.py --place    # recomputes the global layout once
 ```
 
-The crawler writes provisional positions while it discovers pages. Run `--place`
-as a separate batch step after crawling, rather than once per page.
+The crawler writes provisional positions while it discovers pages. The daily
+workflow enables `NN_AUTO_PLACE=1`, which reserves enough quota for `--place`
+after the crawl. Run the manual placement workflow when a retry is needed.
 
 #### 5. Local emulator (no quota)
 ```bash
@@ -108,7 +108,8 @@ The viewer automatically reads Firestore and renders the graph.
 
 ## Configuration
 All runtime settings are loaded from environment variables or `.env`. Key variables include:
-- `NN_WRITE_BUDGET`: maximum writes per run (default 18,000)
+- `NN_WRITE_BUDGET`: maximum crawler writes per run (default 18,000)
+- `NN_PLACE_WRITE_LIMIT`: maximum writes allowed by `--place` (default 19,999)
 - `NN_MAX_PAGES`: total pages to crawl before stopping (default 500,000)
 - `NN_OBEY_ROBOTS`: whether to respect robots.txt (default 1)
 - `NN_PER_HOST`: concurrent connections per host (default 8)
