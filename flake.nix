@@ -1,5 +1,5 @@
 {
-  description = "NetNebula — Python crawler and Firebase Hosting viewer";
+  description = "NetNebula: Python crawler and Firebase Hosting viewer";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -56,7 +56,7 @@
           TLDEXTRACT_CACHE = "./.cache/tldextract";
 
           shellHook = ''
-            echo "NetNebula — $(firebase --version 2>/dev/null || echo 'firebase ?') · $(python --version)"
+            echo "NetNebula: $(firebase --version 2>/dev/null || echo 'firebase ?') · $(python --version)"
             echo
             echo "  Local, no quota               (throwaway database in the emulator)"
             echo "    netnebula-local                            http://localhost:5000"

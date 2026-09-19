@@ -4,7 +4,7 @@ rules_version = '2';
 //
 // The crawler writes through the Admin SDK (service account), which bypasses
 // these rules entirely. No web client therefore needs write access, not even
-// an authenticated one — hence the systematic `if false`.
+// Authentication is disabled; writes remain blocked.
 service cloud.firestore {
   match /databases/{database}/documents {
 

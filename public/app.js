@@ -1,20 +1,20 @@
 /**
- * NetNebula — viewer.
+ * NetNebula viewer.
  *
  * Reads the `pages` collection and renders it as a 3D nebula. Read-only: every
  * write goes through the crawler, via the Admin SDK, which bypasses the
  * security rules entirely.
  *
- * The rendering lives in gl.js — raw WebGL2, three draw calls for the whole
+ * Rendering uses gl.js and WebGL2.
  * scene. What is left here is loading, state and the interface.
  *
  * Loading happens at two levels, the way an open-world game shows distant
  * terrain only in low definition and loads nearby regions in detail:
  *
- *   The skeleton — the shallowest pages, loaded once. This is the overall
+ *   The skeleton: shallow pages loaded once.
  *   shape, the one seen from afar.
  *
- *   The regions — as the camera comes closer, the 27 cells around the point it
+ *   The regions: nearby cells load on approach.
  *   is aimed at, in one `where('cell','in',[...])` query. Firestore caps `in`
  *   at 30 values: a 3x3x3 neighbourhood just fits, and that is what fixes the
  *   shape of the loading.
@@ -42,7 +42,7 @@ const firebaseConfig = {
 
 // Served from localhost: the viewer talks to the Firestore emulator rather
 // than to the production database. Same code on both sides, throwaway
-// database, no quota — this is what `netnebula-local` starts. The port must
+// Local database uses no quota.
 // match firebase.json > emulators > firestore.
 const LOCAL = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 const EMULATOR_HOST = '127.0.0.1';
@@ -85,7 +85,7 @@ const SWAY = 0.006;
 const REDUCED_MOTION =
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const nf = new Intl.NumberFormat('fr-FR');
+const nf = new Intl.NumberFormat('en-US');
 
 let db = null;
 let renderer = null;
@@ -94,7 +94,7 @@ let paused = false;
 /** Every page loaded, by identifier. */
 const loaded = new Map();
 
-/** Cells already requested — we never ask for one twice. */
+/** Cells already requested. */
 const requested = new Set();
 /** Display order: the index of a page in the GPU buffers. */
 let order = [];
@@ -108,11 +108,6 @@ async function main() {
       LOCAL ? { ...firebaseConfig, projectId: LOCAL_PROJECT } : firebaseConfig);
     db = firebase.firestore();
     if (LOCAL) {
-      // Automatic transport detection regularly gets it wrong against the
-      // emulator: the realtime stream never completes, the SDK declares itself
-      // offline after ten seconds and the page announces an empty database
-      // while it is full. Long polling is explicit and reliable; its overhead
-      // is irrelevant locally.
       db.settings({ experimentalForceLongPolling: true,
                    experimentalAutoDetectLongPolling: false, merge: true });
       db.useEmulator(EMULATOR_HOST, EMULATOR_PORT);
@@ -120,10 +115,10 @@ async function main() {
 
     const stats = await readStats(db);
     showOverlay({
-      title: 'Ouverture de la carte',
+      title: 'Opening the map',
       text: stats && stats.page_count
-        ? `${nf.format(stats.page_count)} pages relevées.`
-        : 'Un instant.'
+        ? `${nf.format(stats.page_count)} pages crawled.`
+        : 'One moment.'
     });
 
     const skeleton = await loadSkeleton(stats);
@@ -136,11 +131,11 @@ async function main() {
       const unplaced = Boolean(stats && stats.page_count > 0);
       showOverlay({
         title: unplaced
-          ? 'La carte est en cours de préparation'
-          : 'Rien à cartographier pour l’instant',
+          ? 'The map is being prepared'
+          : 'Nothing to map yet',
         text: unplaced
-          ? 'Les pages sont relevées mais pas encore placées. Revenez dans un moment.'
-          : 'Le relevé n’a pas encore commencé. La carte apparaîtra dès les premières pages explorées.'
+          ? 'Pages have been crawled but not placed. Check back soon.'
+          : 'Crawling has not started yet. The map will appear with the first pages.'
       });
       if (unplaced) console.warn('pages without a position: run `crawler.py --place`');
       return;
@@ -157,9 +152,9 @@ async function main() {
     // who just wants to look at a map.
     console.error(error);
     showOverlay({
-      title: 'La carte n’a pas pu être chargée',
-      text: 'Vérifiez votre connexion, puis réessayez.',
-      action: { label: 'Réessayer', onClick: () => location.reload() }
+      title: 'The map could not be loaded',
+      text: 'Check your connection and try again.',
+      action: { label: 'Retry', onClick: () => location.reload() }
     });
   }
 }
@@ -183,7 +178,7 @@ function toNode(doc) {
     id: doc.id,
     url: d.url || '',
     title: d.title || d.url || doc.id,
-    domain: d.domain || 'autre',
+    domain: d.domain || 'other',
     depth: d.depth === undefined ? 99 : d.depth,
     // Parent in the URL tree. This is what tells the edges that carry the
     // structure apart from those that cross it.
@@ -200,7 +195,7 @@ function toNode(doc) {
 
 /**
  * The skeleton: the shallowest pages, the ones carrying the overall shape.
- * Cached locally — it is the bulk of the Firestore reads, and it only changes
+ * Cached locally; reads are expensive.
  * when the crawler passes through.
  */
 async function loadSkeleton(stats) {
@@ -209,8 +204,8 @@ async function loadSkeleton(stats) {
   if (cached) return cached;
 
   // Sorted by tier in the URL tree, not by crawl depth: the first screen then
-  // shows the top of the hierarchy — site roots and their large directories,
-  // linked to one another — instead of a sample scattered across the whole
+  // Show hierarchy roots and large directories,
+  // linked instead of randomly scattered.
   // graph that does not hold together.
   const snapshot = await db.collection('pages')
     .orderBy('tier').limit(SKELETON).get();
@@ -314,7 +309,7 @@ function writeCache(stamp, list) {
 
 /**
  * One hue per domain, and nothing more: the geometry no longer says which site
- * a page belongs to — it says who points at whom — so the colour is what
+ * A page belongs to its referrer.
  * carries that information.
  *
  * The GPU only receives the hue, not an RGB triple. The conversion happens in
@@ -391,7 +386,7 @@ function start() {
  * Build the buffers. One kind of node only: the page.
  *
  * No pyramid of aggregates. The previous attempt added five hundred vertices,
- * two attributes and edges per level, only to mask at the fragment stage — the
+ * Masking uses two attributes per level.
  * vertex shader still processed every vertex. It cost more than it saved.
  *
  * What actually bounds the load is elsewhere: loading by region never brings
@@ -409,7 +404,7 @@ const CROWD_CELL = 0.012;
  * Additive blending has no ceiling: a hundred pages in the same place sum
  * their opacities and the heart of a cluster becomes a white disc with neither
  * colour nor structure, while an isolated page stays invisible. A global gain
- * cannot settle both — it just moves the problem from one end to the other.
+ * cannot settle both. It moves the problem elsewhere.
  *
  * Every page is therefore attenuated by the square root of the number of pages
  * sharing its immediate neighbourhood. A cluster then gains in extent rather
@@ -437,7 +432,7 @@ function upload() {
 
   const positions = new Float32Array(count * 3);
   const sizes = new Float32Array(count);
-  // Two floats per node: the hue of its domain, in turns, and its level — the
+  // Store domain hue and level.
   // attenuation by local density. The colour itself is computed in the shader,
   // which is what lets links interpolate in hue.
   const tones = new Float32Array(count * 2);
@@ -481,7 +476,7 @@ function upload() {
     node.out = node.linked_to.length;
     node.shown = shown;
     // Size says what the page carries: the pages of its subtree, plus its
-    // visible links. The subtree is the stable measure — a directory holding
+    // Subtree size stabilizes visible links.
     // five hundred pages is a junction, even when none of its children are
     // loaded.
     //
@@ -891,8 +886,8 @@ function showSurvey(stats) {
   }
 
   document.getElementById('survey-note').textContent = pending > 0
-    ? `${nf.format(pending)} pages encore inexplorées`
-    : 'Toutes les pages repérées ont été explorées';
+    ? `${nf.format(pending)} pages still unexplored`
+    : 'All discovered pages have been explored';
 
   survey.hidden = false;
 }
@@ -969,14 +964,14 @@ function togglePause() {
   paused = !paused;
   if (paused) renderer.stop(); else renderer.start();
   const button = document.getElementById('c-pause');
-  button.querySelector('span').textContent = paused ? 'Reprendre' : 'Pause';
+  button.querySelector('span').textContent = paused ? 'Resume' : 'Pause';
   button.setAttribute('aria-pressed', String(paused));
 }
 
 /* ------------------------------------------------------------------ labels --- */
 
 /**
- * One name per domain, under its cluster — and nothing else.
+ * One name per domain, under its cluster.
  *
  * Naming every page covered the map with long titles fighting for room and
  * hiding what they pointed at. The domain says the essential thing: where you
@@ -1083,7 +1078,7 @@ function mountLabels() {
 /* ------------------------------------------------------------------ search --- */
 
 /**
- * Filter by name. What matches lights up, the rest dims — nothing leaves the
+ * Matches brighten; others dim.
  * map, otherwise searching would cost you your bearings.
  */
 function mountSearch() {
@@ -1091,8 +1086,8 @@ function mountSearch() {
   const status = document.getElementById('search-count');
   let matches = [];
 
-  // Titles come from the French-speaking web: searching for "eugenie" has to
-  // find "Eugénie". Without folding the accents away, the search forces you to
+  // Titles may contain accents: searching "eugenie" should find matches.
+  // Without folding accents, users must reproduce an unknown spelling.
   // reproduce a spelling you do not know yet.
   const fold = (text) => text
     .normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
@@ -1111,7 +1106,7 @@ function mountSearch() {
     }
 
     status.textContent = query
-      ? `${nf.format(matches.length)} ${matches.length > 1 ? 'résultats' : 'résultat'}`
+      ? `${nf.format(matches.length)} ${matches.length !== 1 ? 'results' : 'result'}`
       : '';
     upload();
   };

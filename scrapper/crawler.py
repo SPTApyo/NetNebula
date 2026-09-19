@@ -34,12 +34,12 @@ import json
 import random
 from loguru import logger
 
-# configure loguru – keep the console output, but add timestamps
+# Configure timestamped console logging.
 logger.remove()
 logger.add(sys.stderr, format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}")
 
 # --------------------------------------------------------------------------
-# Batch writer – collect Firestore write ops and commit them in batches of up to 500.
+# Batch Firestore writes, up to 500 operations.
 class WriteBatcher:
     """Collect Firestore write operations and commit them in batches.
     The maximum number of operations per batch is 500, matching the Firebase limit.
@@ -79,7 +79,7 @@ class WriteBatcher:
     def commit_sync(self):
         asyncio.run(self.commit())
 
-# Cache file for frontier – keeps track of already seen URLs across runs
+# Cache frontier state across runs.
 FRONTIER_CACHE = Path(".frontier_cache.pkl")
 
 

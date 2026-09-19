@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-<em>Interactive 3‑D graph of the web – pages are nodes, links are edges.</em>
+<em>Interactive 3-D graph of the web: pages are nodes, links are edges.</em>
 </p>
 
 <hr/>
@@ -25,8 +25,8 @@
 NetNebula is a two‑part system that maps the web into an interactive 3‑D visualisation.
 The **crawler** (Python + Firebase Admin SDK) populates Firestore with pages and links, while the **viewer** (static page served by Firebase Hosting) reads that data to render a WebGL2 graph.
 
-- **Crawler** – discovers pages starting from seed URLs, respects `robots.txt`, stores metadata in Firestore, and persists frontier state locally for fast restarts.
-- **Viewer** – loads the Firestore snapshot into a lightweight client, positions nodes via a pre‑computed spatial layout, and renders edges with WebGL2.
+- **Crawler**: discovers pages starting from seed URLs, respects `robots.txt`, stores metadata in Firestore, and persists frontier state locally for fast restarts.
+- **Viewer**: loads the Firestore snapshot into a lightweight client, positions nodes via a precomputed spatial layout, and renders edges with WebGL2.
 
 Both components communicate only through Firestore; no direct network traffic between them is required.
 
@@ -38,9 +38,9 @@ scrapper/crawler.py ──writes──> Firestore ──reads──> public/ (vi
                             frontier/         meta/stats
 ```
 
-- `pages/{sha1(url)}` – page metadata (`url`, `domain`, `title`, `linked_to[]`, spatial coordinates, etc.).
-- `frontier/{sha1(url)}` – queue state for pages yet to be crawled.
-- `meta/stats` – aggregated statistics (page count, frontier size, domain distribution).
+- `pages/{sha1(url)}`: page metadata (`url`, `domain`, `title`, `linked_to[]`, spatial coordinates, etc.).
+- `frontier/{sha1(url)}`: queue state for pages yet to be crawled.
+- `meta/stats`: aggregated statistics (page count, frontier size, domain distribution).
 
 The viewer reconstructs the graph client‑side using a grid of cells; node positions are immutable once assigned by the crawler.
 
@@ -87,7 +87,11 @@ Edit `scrapper/.env` to point `GOOGLE_APPLICATION_CREDENTIALS` or `NN_SERVICE_AC
 ```bash
 python scrapper/crawler.py            # starts crawling / resumes existing run
 python scrapper/crawler.py --status   # prints database statistics
+python scrapper/crawler.py --place    # recomputes the global layout once
 ```
+
+The crawler writes provisional positions while it discovers pages. Run `--place`
+as a separate batch step after crawling, rather than once per page.
 
 #### 5. Local emulator (no quota)
 ```bash
@@ -104,11 +108,11 @@ The viewer automatically reads Firestore and renders the graph.
 
 ## Configuration
 All runtime settings are loaded from environment variables or `.env`. Key variables include:
-- `NN_WRITE_BUDGET` – maximum writes per run (default 18 000)
-- `NN_MAX_PAGES` – total pages to crawl before stopping (default 500 000)
-- `NN_OBEY_ROBOTS` – whether to respect robots.txt (default 1)
-- `NN_PER_HOST` – concurrent connections per host (default 8)
-- `FETCH_TIMEOUT` – HTTP timeout in seconds (default 15)
+- `NN_WRITE_BUDGET`: maximum writes per run (default 18,000)
+- `NN_MAX_PAGES`: total pages to crawl before stopping (default 500,000)
+- `NN_OBEY_ROBOTS`: whether to respect robots.txt (default 1)
+- `NN_PER_HOST`: concurrent connections per host (default 8)
+- `FETCH_TIMEOUT`: HTTP timeout in seconds (default 15)
 
 See `scrapper/.env.example` for a full list with defaults.
 
@@ -116,4 +120,4 @@ See `scrapper/.env.example` for a full list with defaults.
 Pull requests are welcome. Please ensure tests pass locally (`python scrapper/test_crawler.py`) and that the CI workflow remains green.
 
 ## License
-This project is licensed under the MIT license – see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT license. See [LICENSE](LICENSE) for details.

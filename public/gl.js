@@ -1,5 +1,5 @@
 /**
- * NetNebula — WebGL2 rendering engine.
+ * NetNebula WebGL2 rendering engine.
  *
  * Replaces 3d-force-graph, which created one Object3D per node AND per link:
  * measured at 3010 nodes, 30126 draw calls and 0.9 frames per second on an
@@ -7,9 +7,9 @@
  *
  * Here the whole scene fits in three draw calls, whatever the node count:
  *
- *   1. gl.LINES  — every edge, one buffer
- *   2. gl.POINTS — wide pale halo
- *   3. gl.POINTS — crisp dot on top
+ *   1. gl.LINES: every edge, one buffer
+ *   2. gl.POINTS: wide pale halo
+ *   3. gl.POINTS: crisp dot on top
  *
  * The two point passes give the glow without post-processing or a second
  * render target. Nodes carry no geometry: `gl_PointSize` in the vertex shader,
@@ -134,8 +134,8 @@ function compile(gl, vertexSource, fragmentSource) {
 // endpoint carries the phase and amplitude of the node it touches: without
 // that the strokes come away from their ends and the map falls apart.
 //
-// The amplitude grows with the level of detail: from afar the map is calm — a
-// tremor at that distance would only be noise — and up close it lives. It also
+// Detail controls amplitude; distant motion stays calm.
+// while nearby nodes remain alive. It also
 // grows towards the leaves: a heavily linked junction is anchored, an isolated
 // page floats at the end of its branch.
 
@@ -172,7 +172,7 @@ const MOTION = `
 //
 // A point is only a vertex: past the near plane the GPU rejects it whole. A
 // real object would have extent and would slide off to the side; the point
-// vanishes outright. It cannot be given extent without being given geometry —
+// vanishes outright. It cannot have extent without geometry,
 // so it is faded out on approach instead, which reads as passing through
 // rather than as a disappearing trick.
 const NEAR = `
@@ -230,7 +230,7 @@ const DOT_VERTEX = `#version 300 es
     vMark = abs(aRank - uMarked) < 0.5 ? 1.0 : 0.0;
 
     // A first pass gives the depth, hence the on-screen size, hence the level
-    // of detail — which in turn modulates the amplitude of the motion.
+    // of detail, which modulates motion amplitude.
     vec4 probe = uMVP * vec4(aPos, 1.0);
     // Capped: size grows as 1/depth, and unbounded a node approached very
     // closely becomes a blurred smear that eats the screen.
@@ -287,7 +287,7 @@ const DOT_FRAGMENT = `#version 300 es
     // is what kept the map black until a cluster piled hundreds of points on
     // the same spot.
     //
-    // A small point is therefore drawn almost solid — crisp and legible; only
+    // Small points render nearly solid.
     // the large ones, which have the room, keep a gradient. The glow stays
     // soft in every case: that is its job.
     a = pow(a, mix(mix(1.2, 6.0, vDetail), 3.0, uGlow));
@@ -321,11 +321,11 @@ const LINE_VERTEX = `#version 300 es
     gl_Position = p;
 
     // Each endpoint carries the hue of its node, and the rasteriser
-    // interpolates between the two — for free, and in hue: a link from
+    // Interpolate both values directly.
     // Wikipedia to YouTube passes through violet rather than through a grey.
     // The conversion happens in the fragment shader, otherwise the
     // interpolation would fall back to RGB. A link inside one domain stays a
-    // flat hue and recedes; a link that crosses shows up — that is the subject
+    // Flat hue recedes; crossings stand out.
     // of the map, so it is given more intensity too.
     vTone = aTone;
     // Fifty thousand additive strokes converging in a tight cluster burn its
@@ -333,7 +333,7 @@ const LINE_VERTEX = `#version 300 es
     // density, not for one isolated stroke.
     // aBoost says how much the edge deserves to be seen: tree structure,
     // domain crossing, junction. Seven times the opacity between a structural
-    // edge and an incidental crossing — that is what pulls the map out of the
+    // Crossings add depth to the map.
     // hairball, where everything is drawn with the same force.
     vAlpha = (0.004 + 0.075 * aBoost) * uExposure
            * depthFade(p.w) * nearFade(p.w) * aDim;
@@ -398,11 +398,11 @@ export class Renderer {
     this.sizes = null;
     this.ranks = null;
 
-    // Automatic exposure — see expose().
+    // Automatic exposure; see expose().
     this.exposure = 1;
 
     // Free camera: a position and a gaze. The gaze is computed, never guessed
-    // — a yaw set by hand would aim beside the map.
+    // A fixed yaw would aim beside the map.
     this.eye = new Float32Array([1.1, 0.7, 2.1]);
     const start = aim(this.eye, [0, 0, 0]);
     this.yaw = start.yaw;
@@ -509,7 +509,7 @@ export class Renderer {
    * Additive blending makes screen brightness depend on how many points
    * overlap: an opacity that suits a cluster leaves an isolated page
    * invisible, and the reverse burns the heart of clusters to white. No fixed
-   * value can satisfy both — hence an exposure that adjusts to what is
+  * Exposure adapts to the visible range.
    * actually on screen.
    *
    * Covered area is estimated over a sample of constant size: measuring it
@@ -590,7 +590,7 @@ export class Renderer {
    * Aim for 60 frames per second by degrading fidelity, never content.
    *
    * The previous version hid nodes. Because it reacted to the frame rate, it
-   * hid and restored them in batches while the camera was not moving — things
+  * Batch hidden nodes while the camera rests.
    * disappearing for no perceptible reason, which is exactly what this design
    * has tried to banish from the start.
    *

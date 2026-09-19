@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NetNebula — carte des liens du web</title>
-    <meta name="description" content="Une carte tridimensionnelle des liens entre les pages du web.">
+    <title>NetNebula: a map of web links</title>
+    <meta name="description" content="A three-dimensional map of links between web pages.">
     <meta name="theme-color" content="#04050c">
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='5' fill='%23ffe3ab'/%3E%3Ccircle cx='26' cy='7' r='2' fill='%23a8bfff'/%3E%3Ccircle cx='6' cy='23' r='2.5' fill='%23ff9f7a'/%3E%3C/svg%3E">
 
@@ -14,25 +14,29 @@
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <canvas id="orb" aria-label="Carte tridimensionnelle des liens entre pages web" role="img"></canvas>
+    <canvas id="orb" aria-label="Three-dimensional map of links between web pages" role="img"></canvas>
     <div id="veil" aria-hidden="true"></div>
     <div id="labels" aria-hidden="true"></div>
 
     <header id="mark">
         <h1>NetNebula</h1>
-        <p>Une carte des liens du web</p>
+        <p>A map of web links</p>
+        <a class="github-link" href="https://github.com/SPTApyo/NetNebula"
+           target="_blank" rel="noopener noreferrer" title="Open NetNebula on GitHub">
+            GitHub <span aria-hidden="true">↗</span>
+        </a>
     </header>
 
     <search id="finder">
-        <input id="search" type="search" placeholder="Chercher une page"
-               autocomplete="off" spellcheck="false" aria-label="Chercher une page">
+         <input id="search" type="search" placeholder="Search for a page"
+             autocomplete="off" spellcheck="false" aria-label="Search for a page">
         <p id="search-count" aria-live="polite"></p>
     </search>
 
-    <section id="readout" aria-live="polite" aria-label="Étendue de la carte" hidden>
+    <section id="readout" aria-live="polite" aria-label="Map coverage" hidden>
         <div class="row"><span class="k">Pages</span><span class="v" id="stat-nodes">0</span></div>
-        <div class="row"><span class="k">Liens</span><span class="v" id="stat-links">0</span></div>
-        <div class="row"><span class="k">Domaines</span><span class="v" id="stat-domains">0</span></div>
+        <div class="row"><span class="k">Links</span><span class="v" id="stat-links">0</span></div>
+        <div class="row"><span class="k">Domains</span><span class="v" id="stat-domains">0</span></div>
         <div id="survey" hidden>
             <div id="survey-rule"><i></i></div>
             <p id="survey-note"></p>
@@ -43,20 +47,20 @@
         <h2 class="d-title"></h2>
         <a class="d-link" target="_blank" rel="noopener noreferrer"></a>
         <dl>
-            <div class="row"><span class="k">Domaine</span><span class="v d-domain"></span></div>
-            <div class="row"><span class="k">Liens sortants</span><span class="v d-out"></span></div>
-            <div class="row"><span class="k">Liens entrants</span><span class="v d-in"></span></div>
+            <div class="row"><span class="k">Domain</span><span class="v d-domain"></span></div>
+            <div class="row"><span class="k">Outgoing links</span><span class="v d-out"></span></div>
+            <div class="row"><span class="k">Incoming links</span><span class="v d-in"></span></div>
         </dl>
-        <button type="button" class="d-close">Fermer</button>
+        <button type="button" class="d-close">Close</button>
     </section>
 
-    <nav id="controls" aria-label="Navigation dans la carte" hidden>
-        <button type="button" id="c-fit"><span>Tout voir</span><kbd>T</kbd></button>
-        <button type="button" id="c-random"><span>Au hasard</span><kbd>H</kbd></button>
+    <nav id="controls" aria-label="Map navigation" hidden>
+        <button type="button" id="c-fit"><span>View all</span><kbd>T</kbd></button>
+        <button type="button" id="c-random"><span>Random</span><kbd>H</kbd></button>
         <button type="button" id="c-pause"><span>Pause</span><kbd>P</kbd></button>
     </nav>
 
-    <p id="hint" hidden>Glissez pour regarder · ZQSD pour voler · double-clic pour rejoindre</p>
+    <p id="hint" hidden>Drag to look · WASD to fly · double-click to focus</p>
 
     <div id="tip" hidden>
         <span class="t-title"></span>
@@ -64,8 +68,8 @@
     </div>
 
     <div id="overlay">
-        <h2 id="overlay-title">Ouverture de la carte</h2>
-        <p id="overlay-text">Un instant.</p>
+        <h2 id="overlay-title">Opening the map</h2>
+        <p id="overlay-text">One moment.</p>
         <button type="button" id="overlay-action" hidden><span></span></button>
     </div>
 

@@ -1,4 +1,4 @@
-/* NetNebula — the viewer.
+/* NetNebula viewer.
  *
  * The graph is the object; the interface is an annotation laid straight onto
  * the void. No container, no card, no frosted glass: only text anchored to the
@@ -245,6 +245,36 @@ body::after {
     margin-top: calc(var(--step) * 0.75);
     color: var(--ink-2);
     font-size: 11px;
+}
+
+.github-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: calc(var(--step) * 1.25);
+    padding-bottom: 3px;
+    border-bottom: 1px solid var(--rule);
+    color: var(--ink-3);
+    font-size: 10px;
+    text-decoration: none;
+    pointer-events: auto;
+    transition: border-color 160ms ease, color 160ms ease;
+}
+
+.github-link span {
+    color: var(--ink-2);
+    font-size: 13px;
+    line-height: 0.7;
+    transition: transform 160ms ease;
+}
+
+.github-link:hover {
+    border-color: var(--focus);
+    color: var(--ink);
+}
+
+.github-link:hover span {
+    transform: translate(2px, -2px);
 }
 
 /* -- readouts ------------------------------------------------------------ */
