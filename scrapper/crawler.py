@@ -28,6 +28,60 @@ import signal
 import sys
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 from urllib.robotparser import RobotFileParser
+# --- new imports ----------------------------------------------------------
+from pathlib import Path
+import json
+import random
+from loguru import logger
+
+# configure loguru – keep the console output, but add timestamps
+logger.remove()
+logger.add(sys.stderr, format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}")
+
+# --------------------------------------------------------------------------
+# Batch writer – collect Firestore write ops and commit them in batches of up to 500.
+class WriteBatcher:
+    """Collect Firestore write operations and commit them in batches.
+    The maximum number of operations per batch is 500, matching the Firebase limit.
+    """
+
+    def __init__(self, db, max_batch=500):
+        self.db = db
+        self.max_batch = max_batch
+        self._ops = []  # list of (doc_ref, data)
+        self._lock = asyncio.Lock()
+
+    async def add_set(self, doc_ref, data, merge=False):
+        async with self._lock:
+            self._ops.append((doc_ref, data))
+            if len(self._ops) >= self.max_batch:
+                await self.commit()
+
+    async def commit(self):
+        async with self._lock:
+            if not self._ops:
+                return
+            batch = self.db.batch()
+            for ref, d in self._ops:
+                batch.set(ref, d)
+            # Firestore batch commit is synchronous; run it in a thread to avoid blocking the loop.
+            await asyncio.to_thread(batch.commit)
+            self._ops.clear()
+
+    async def flush(self):
+        """Force a commit of any remaining operations."""
+        await self.commit()
+
+    # Synchronous wrappers for use in threaded contexts
+    def add_set_sync(self, doc_ref, data, merge=False):
+        asyncio.run(self.add_set(doc_ref, data, merge))
+
+    def commit_sync(self):
+        asyncio.run(self.commit())
+
+# Cache file for frontier – keeps track of already seen URLs across runs
+FRONTIER_CACHE = Path(".frontier_cache.pkl")
+
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 
@@ -1143,6 +1197,9 @@ class Crawler:
         self.frontier = db.collection("frontier")
         self.budget = budget
 
+        # Batcher for Firestore writes
+        self.batcher = WriteBatcher(db)
+
         # A plain boolean rather than an asyncio.Event: it is read from the
         # threads of `to_thread`, where an Event would not be safe.
         self._stopped = False
@@ -1183,26 +1240,38 @@ class Crawler:
     # -- resume -------------------------------------------------------------
 
     def load_state(self):
-        """Rebuild the resume state from Firestore.
+        """Rebuild the resume state from Firestore or cache.
 
-        A single pass over `frontier`: it serves both as the deduplication
-        index (`seen`) and as the queue of remaining URLs. Returns the pending
-        URLs rather than filling the queue -- this method runs in a thread,
-        where asyncio.Queue would not be safe.
+        Load frontier data from a local pickle cache if available to avoid a full
+        Firestore read. On fallback, perform the original Firestore scan and then
+        persist the state for future runs.
         """
         pending = []
-        fields = ["url", "depth", "status", "outside", "host", "x", "y", "z"]
-        for doc in self.frontier.select(fields).stream():
-            self.seen.add(doc.id)
-            data = doc.to_dict() or {}
-            if data.get("status") == "pending" and data.get("url"):
-                pending.append(Task(
-                    data["url"],
-                    data.get("depth", 0),
-                    data.get("outside", 0),
-                    (data.get("x", 0.0), data.get("y", 0.0), data.get("z", 0.0)),
-                    data.get("host", host_of(data["url"])),
-                ))
+        cache_loaded = False
+        # Attempt to load cached state first
+        if FRONTIER_CACHE.exists():
+            try:
+                with open(FRONTIER_CACHE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                self.seen = set(data.get('seen', []))
+                pending = [Task(**t) for t in data.get('pending', [])]
+                logger.info(f"Loaded frontier cache: {len(self.seen)} known URLs, {len(pending)} pending.")
+                cache_loaded = True
+            except Exception:
+                logger.warning("Failed to load frontier cache; falling back to Firestore read.")
+        if not cache_loaded:
+            fields = ["url", "depth", "status", "outside", "host", "x", "y", "z"]
+            for doc in self.frontier.select(fields).stream():
+                self.seen.add(doc.id)
+                data = doc.to_dict() or {}
+                if data.get("status") == "pending" and data.get("url"):
+                    pending.append(Task(
+                        data["url"],
+                        data.get("depth", 0),
+                        data.get("outside", 0),
+                        (data.get("x", 0.0), data.get("y", 0.0), data.get("z", 0.0)),
+                        data.get("host", host_of(data["url"])),
+                    ))
 
         self.page_count = self._count(self.pages)
 
@@ -1230,11 +1299,17 @@ class Crawler:
             self.seen.add(url_id(normalized))
 
         if fresh:
-            print(f"Seeding: {len(fresh)} new start URLs.")
+            logger.info(f"Seeding: {len(fresh)} new start URLs.")
             self._seed(fresh)
 
-        print(f"Resuming: {self.page_count} pages stored, "
-              f"{len(pending)} URLs pending, {len(self.seen)} URLs known.")
+        # Persist cache for next run
+        try:
+            with open(FRONTIER_CACHE, 'w', encoding='utf-8') as f:
+                json.dump({"seen": list(self.seen), "pending": [t._asdict() for t in pending]}, f)
+        except Exception:
+            logger.warning("Failed to write frontier cache.")
+
+        logger.info(f"Resuming: {self.page_count} pages stored, {len(pending)} URLs pending, {len(self.seen)} URLs known.")
         return pending
 
     def priority(self, task):
@@ -1457,9 +1532,7 @@ class Crawler:
         self.known[domain] += 1
 
         if self.crawled % 25 == 0:
-            print(f"  {self.crawled} pages | queue {self.queue.qsize()} | "
-                  f"{self.in_flight} in flight over {len(self.hosts_in_flight)} hosts | "
-                  f"budget left {self.budget.left}")
+            logger.info(f"{self.crawled} pages | queue {self.queue.qsize()} | {self.in_flight} in flight over {len(self.hosts_in_flight)} hosts | budget left {self.budget.left}")
 
         if self.page_count >= MAX_PAGES:
             self.request_stop(f"ceiling of {MAX_PAGES} pages reached")
@@ -1510,7 +1583,7 @@ class Crawler:
 
         pending = await asyncio.to_thread(self.load_state)
         if not pending:
-            print("Nothing to do: the frontier holds no pending URL.")
+            logger.info("Nothing to do: the frontier holds no pending URL.")
             return
         for task in pending:
             self.enqueue(task)
@@ -1530,9 +1603,7 @@ class Crawler:
         loop.set_default_executor(ThreadPoolExecutor(
             max_workers=min(WORKERS + 8, 200), thread_name_prefix="crawler"))
 
-        print(f"Starting: {WORKERS} workers ({PER_HOST} max per host), "
-              f"budget {self.budget.left} writes, "
-              f"robots.txt {'honoured' if OBEY_ROBOTS else 'ignored'}.")
+        logger.info(f"Starting: {WORKERS} workers ({PER_HOST} max per host), budget {self.budget.left} writes, robots.txt {'honoured' if OBEY_ROBOTS else 'ignored'}.")
         # Without an explicit connector, aiohttp caps at 100 simultaneous
         # connections: past that, raising NN_WORKERS sped nothing up.
         connector = aiohttp.TCPConnector(
@@ -1546,16 +1617,13 @@ class Crawler:
             ])
 
         await asyncio.to_thread(self.write_stats)
-        print(f"\nStopped: {self.stop_reason}.")
-        print(f"{self.crawled} pages crawled, {self.failed} failures, "
-              f"{self.budget.used} writes consumed.")
+        logger.info(f"\nStopped: {self.stop_reason}.")
+        logger.info(f"{self.crawled} pages crawled, {self.failed} failures, {self.budget.used} writes consumed.")
         if self.failures:
-            detail = ", ".join(f"{reason} x{count}" for reason, count
-                               in self.failures.most_common(6))
-            print(f"  failures: {detail}")
+            detail = ", ".join(f"{reason} x{count}" for reason, count in self.failures.most_common(6))
+            logger.info(f"  failures: {detail}")
         if not self.queue.empty():
-            print(f"{self.queue.qsize()} URLs still pending -- "
-                  f"running the script again picks them up.")
+            logger.info(f"{self.queue.qsize()} URLs still pending -- running the script again picks them up.")
 
     def write_stats(self):
         stats_doc = self.db.document("meta/stats")
@@ -1601,9 +1669,9 @@ def show_status(db):
 
     stats = (db.document("meta/stats").get().to_dict() or {})
 
-    print(f"pages crawled    : {pages}")
-    print(f"frontier total   : {total}")
-    print(f"  pending        : {pending}")
+    logger.info(f"pages crawled    : {pages}")
+    logger.info(f"frontier total   : {total}")
+    logger.info(f"  pending        : {pending}")
     print(f"  processed      : {total - pending}")
     print(f"domains          : {', '.join(stats.get('domains', [])) or '-'}")
     print(f"last run         : {stats.get('updated_at', '-')}")
@@ -1623,7 +1691,7 @@ def backfill(db):
 
     Costs one write per page.
     """
-    print("Reading pages...")
+    logger.info("Reading pages...")
     pages = {}
     for doc in db.collection("pages").select(["url", "linked_to"]).stream():
         data = doc.to_dict() or {}
@@ -1637,7 +1705,7 @@ def backfill(db):
             "linked_to": data.get("linked_to", []),
         }
     if not pages:
-        print("No page to place.")
+        logger.info("No page to place.")
         return
     print(f"{len(pages)} pages.")
 
