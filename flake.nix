@@ -18,6 +18,7 @@
         lxml
         tldextract
         firebase-admin
+        loguru
         python-dotenv
       ]);
 

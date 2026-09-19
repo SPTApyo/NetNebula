@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install aiohttp beautifulsoup4 lxml tldextract firebase-admin python-dotenv
+          pip install -r scrapper/requirements.txt
 
       - name: Write Service Account key to file
         env:

@@ -74,7 +74,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-> `requirements.txt` contains `aiohttp`, `beautifulsoup4`, `lxml`, `tldextract`, `firebase-admin`, and `python-dotenv`.
+> `requirements.txt` contains the crawler's Python dependencies, including `loguru` for logging.
 
 #### 3. Configure credentials
 Create a `.env` file from the template:

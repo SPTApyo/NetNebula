@@ -7,6 +7,7 @@ tldextract>=5.1
 firebase-admin>=6.5
 # count() on collections (aggregation queries) landed in 2.11.
 google-cloud-firestore>=2.11
+loguru>=0.7
 # Reads scrapper/.env into the environment. Optional: every setting can be
 # exported by hand, and the crawler starts without this package.
 python-dotenv>=1.0
