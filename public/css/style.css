@@ -162,64 +162,6 @@ body {
     white-space: nowrap;
 }
 
-/* Corner gradients: they stand in for panels. The text draws its contrast from
-   the void itself, not from a box laid over it.
-   With the camera close in, very bright nodes pass under the annotations: the
-   gradient has to stay dense across the whole text area before it opens up. */
-body::before,
-body::after {
-    content: "";
-    position: fixed;
-    z-index: 1;
-    width: 58vw;
-    height: 54vh;
-    pointer-events: none;
-}
-
-body::before {
-    top: 0;
-    left: 0;
-    background: radial-gradient(125% 125% at 0% 0%,
-        rgba(4, 5, 12, 0.97) 0%, rgba(4, 5, 12, 0.93) 30%,
-        rgba(4, 5, 12, 0.6) 58%, transparent 82%);
-}
-
-body::after {
-    bottom: 0;
-    right: 0;
-    background: radial-gradient(125% 125% at 100% 100%,
-        rgba(4, 5, 12, 0.97) 0%, rgba(4, 5, 12, 0.93) 30%,
-        rgba(4, 5, 12, 0.6) 58%, transparent 82%);
-}
-
-/* The two remaining corners. Four annotations, four gradients: covering only
-   the diagonal left the readout cut through by the nodes. */
-#veil::before,
-#veil::after {
-    content: "";
-    position: absolute;
-    z-index: 1;
-    width: 58vw;
-    height: 54vh;
-    pointer-events: none;
-}
-
-#veil::before {
-    top: 0;
-    right: 0;
-    background: radial-gradient(125% 125% at 100% 0%,
-        rgba(4, 5, 12, 0.97) 0%, rgba(4, 5, 12, 0.93) 30%,
-        rgba(4, 5, 12, 0.6) 58%, transparent 82%);
-}
-
-#veil::after {
-    bottom: 0;
-    left: 0;
-    background: radial-gradient(125% 125% at 0% 100%,
-        rgba(4, 5, 12, 0.97) 0%, rgba(4, 5, 12, 0.93) 30%,
-        rgba(4, 5, 12, 0.6) 58%, transparent 82%);
-}
-
 /* Second line of defence where the gradient opens up: invisible over the void,
    decisive when a star passes right behind a figure. */
 #mark,
@@ -694,12 +636,4 @@ kbd {
         display: none;
     }
 
-    body::before {
-        width: 100vw;
-        height: 34vh;
-    }
-
-    body::after {
-        display: none;
-    }
 }
