@@ -1,0 +1,58 @@
+name: Run NetNebula Crawler
+
+on:
+  schedule:
+    - cron: '30 0 * * *'
+  workflow_dispatch: 
+
+jobs:
+  crawler:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install aiohttp beautifulsoup4 lxml tldextract firebase-admin python-dotenv
+
+      - name: Write Service Account key to file
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: |
+          mkdir -p scrapper
+          printf '%s\n' "$GCP_SA_KEY" > scrapper/serviceAccountKey.json
+          python -m json.tool scrapper/serviceAccountKey.json     # fail fast on bad key
+
+      - name: Set environment variables for the crawler
+        env:
+          NN_SERVICE_ACCOUNT: "${{ github.workspace }}/scrapper/serviceAccountKey.json"
+          FETCH_TIMEOUT: 30
+          NN_OBEY_ROBOTS: 1
+        run: |
+          echo "NN_SERVICE_ACCOUNT=${NN_SERVICE_ACCOUNT}" >> $GITHUB_ENV
+          echo "FETCH_TIMEOUT=$FETCH_TIMEOUT" >> $GITHUB_ENV
+          echo "NN_OBEY_ROBOTS=$NN_OBEY_ROBOTS" >> $GITHUB_ENV
+
+      - name: Run crawler status check
+        run: python scrapper/crawler.py --status
+
+      - name: Execute crawler
+        run: python scrapper/crawler.py
+
+      - name: Upload logs (optional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crawler-logs
+          path: |
+            *.log
+            .frontier_cache.pkl
