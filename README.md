@@ -89,9 +89,9 @@ python scrapper/crawler.py            # starts crawling / resumes existing run
 python scrapper/crawler.py --status   # prints database statistics
 ```
 
-The crawler writes provisional positions while it discovers pages. The daily
-workflow enables `NN_AUTO_PLACE=1`, which reserves enough quota for `--place`
-after the crawl. Run the manual placement workflow when a retry is needed.
+The crawler writes provisional positions while it discovers pages. With
+`NN_AUTO_PLACE=1`, it places pending pages first, then spends the remaining
+quota on crawling. A quota error exits cleanly and retries on the next run.
 
 #### 5. Local emulator (no quota)
 ```bash

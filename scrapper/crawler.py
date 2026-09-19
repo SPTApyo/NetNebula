@@ -111,6 +111,11 @@ def _env_flag(name, default):
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+def quota_exhausted(error):
+    """Recognize Firestore quota failures."""
+    return error.__class__.__name__ == "ResourceExhausted"
+
+
 # Seed domains, crawled without restriction. Links they carry to other domains
 # are followed too, but for a single hop: from Wikipedia we take the personal
 # blog it points at, and stop there -- whatever that blog points at next is not
@@ -1283,19 +1288,6 @@ class Crawler:
 
         self.page_count = self._count(self.pages)
 
-        if AUTO_PLACE:
-            write_room = max(0, FIRESTORE_WRITE_QUOTA - self.page_count - 1)
-            page_room = max(0, PLACE_READ_LIMIT - self.page_count - 1)
-            automatic_limit = min(
-                self.budget.limit,
-                (write_room * 2) // 3,
-                page_room * 2,
-            )
-            self.budget.limit = automatic_limit
-            logger.info(
-                f"Automatic placement reserve: {self.page_count} pages, "
-                f"crawl budget {automatic_limit} writes.")
-
         # Pages already taken count towards priority: without this, on restart,
         # Wikipedia would start level with a brand new domain. The tally lives
         # in meta/stats, a document already written on every run -- a dedicated
@@ -1666,6 +1658,7 @@ class Crawler:
             "page_count": self.page_count,
             "frontier_pending": self._count(
                 self.frontier.where(filter=self._pending_filter())),
+            "layout_pending": existing.get("layout_pending", False) or bool(self.crawled),
             "updated_at": self._firestore.SERVER_TIMESTAMP,
         })
         self.budget.spend(1)
@@ -1735,7 +1728,7 @@ def backfill(db):
             )
     if not pages:
         logger.info("No page to place.")
-        return
+        return 0
     if len(pages) + 1 > PLACE_WRITE_LIMIT:
         raise SystemExit(
             f"Placement needs {len(pages) + 1} writes, but only "
@@ -1790,9 +1783,11 @@ def backfill(db):
     from firebase_admin import firestore
 
     db.document("meta/stats").set(
-        {"updated_at": firestore.SERVER_TIMESTAMP}, merge=True)
+        {"layout_pending": False,
+         "updated_at": firestore.SERVER_TIMESTAMP}, merge=True)
 
     print(f"{written} documents written.")
+    return written
 
 
 def purge(db):
@@ -1824,6 +1819,26 @@ def purge(db):
     print("Purge complete.")
 
 
+def run_automatic(db):
+    """Place pending pages, then spend the remaining quota crawling."""
+    stats = (db.document("meta/stats").get().to_dict() or {})
+    placement_writes = 0
+    if stats.get("layout_pending", True):
+        logger.info("Pending layout takes priority over crawling.")
+        placed = backfill(db)
+        placement_writes = placed + 1 if placed else 0
+
+    db.document("meta/stats").set({"layout_pending": True}, merge=True)
+    placement_writes += 1
+    remaining = max(0, FIRESTORE_WRITE_QUOTA - placement_writes)
+    budget_limit = min(WRITE_BUDGET, remaining)
+    if not budget_limit:
+        logger.info("No write quota remains for crawling today.")
+        return
+
+    asyncio.run(Crawler(db, Budget(budget_limit)).run())
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1844,14 +1859,22 @@ def main():
 
     db = open_db()
 
-    if args.status:
-        show_status(db)
-    elif args.place:
-        backfill(db)
-    elif args.purge:
-        purge(db)
-    else:
-        asyncio.run(Crawler(db, Budget(WRITE_BUDGET)).run())
+    try:
+        if args.status:
+            show_status(db)
+        elif args.place:
+            backfill(db)
+        elif args.purge:
+            purge(db)
+        elif AUTO_PLACE:
+            run_automatic(db)
+        else:
+            asyncio.run(Crawler(db, Budget(WRITE_BUDGET)).run())
+    except Exception as error:
+        if quota_exhausted(error):
+            logger.warning("Firestore quota exhausted; retrying next run.")
+            return
+        raise
 
 
 if __name__ == "__main__":
