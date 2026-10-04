@@ -49,7 +49,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/graph.json
-          git commit -m "chore: mise à jour du graphe $(python -c 'import json;print(json.load(open("public/graph.json"))["release"])')"
+          git commit -m "chore: update graph to $(python -c 'import json;print(json.load(open("public/graph.json"))["release"])')"
           git push
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
