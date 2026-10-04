@@ -5,9 +5,9 @@
   "private": true,
   "scripts": {
     "serve": "firebase emulators:start --only hosting",
-    "test": "python pipeline/test_build_graph.py",
-    "graph": "python pipeline/build_graph.py",
-    "graph:small": "python pipeline/build_graph.py --size 2000",
+    "test": "uv run --project pipeline python pipeline/test_build_graph.py",
+    "graph": "uv run --project pipeline python pipeline/build_graph.py",
+    "graph:small": "uv run --project pipeline python pipeline/build_graph.py --size 2000",
     "deploy": "firebase deploy --only hosting"
   },
   "repository": {

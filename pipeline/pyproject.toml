@@ -1,0 +1,9 @@
+[project]
+name = "netnebula-pipeline"
+version = "1.0.0"
+description = "Builds the NetNebula domain graph from the Common Crawl web graph."
+requires-python = ">=3.11"
+dependencies = ["igraph>=0.11"]
+
+[tool.uv]
+package = false

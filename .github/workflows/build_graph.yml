@@ -23,21 +23,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@v10
         with:
-          python-version: '3.13'
-          cache: pip
-          cache-dependency-path: pipeline/requirements.txt
-
-      - run: pip install -r pipeline/requirements.txt
-
-      - run: python pipeline/test_build_graph.py
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+      - run: uv run --locked --project pipeline python pipeline/test_build_graph.py
 
       - name: Build graph.json
         env:
           RELEASE: ${{ inputs.release }}
           SIZE: ${{ inputs.size || '20000' }}
-        run: python pipeline/build_graph.py --size "$SIZE" ${RELEASE:+--release "$RELEASE"}
+        run: uv run --locked --project pipeline python pipeline/build_graph.py --size "$SIZE" ${RELEASE:+--release "$RELEASE"}
 
       - name: Commit snapshot
         id: commit
@@ -49,7 +45,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/graph.json
-          git commit -m "chore: update graph to $(python -c 'import json;print(json.load(open("public/graph.json"))["release"])')"
+          git commit -m "chore: update graph to $(jq -r .release public/graph.json)"
           git push
           echo "changed=true" >> "$GITHUB_OUTPUT"
 

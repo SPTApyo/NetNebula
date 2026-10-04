@@ -15,17 +15,22 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = [
-            (pythonFor pkgs)
+            pkgs.uv
+            pkgs.python313
             pkgs.firebase-tools
             pkgs.nodejs_22
           ];
 
+          # igraph wheels from PyPI link against libstdc++.
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib ];
+          UV_PYTHON_DOWNLOADS = "never";
+
           shellHook = ''
             echo "NetNebula: $(firebase --version 2>/dev/null || echo 'firebase ?') · $(python --version)"
             echo
-            echo "  python pipeline/build_graph.py --size 2000   # small graph"
-            echo "  python pipeline/test_build_graph.py"
-            echo "  firebase emulators:start --only hosting      # http://localhost:5000"
+            echo "  npm run test          # pipeline tests"
+            echo "  npm run graph:small   # 2,000-domain graph"
+            echo "  npm run serve         # http://localhost:5000"
             echo
           '';
         };

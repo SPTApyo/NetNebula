@@ -47,7 +47,7 @@ Nothing is stored between runs: the pipeline is a stateless job.
 
 # Getting Started
 
-NetNebula needs **Python 3.11+** with igraph, and the **Firebase CLI** to serve or deploy the site.
+NetNebula needs **[uv](https://docs.astral.sh/uv/)** (it installs Python 3.11+ and igraph), and the **Firebase CLI** to serve or deploy the site.
 
 ## Setup
 
@@ -58,7 +58,7 @@ nix develop
 
 Without Nix:
 ```bash
-pip install -r pipeline/requirements.txt
+uv sync --project pipeline
 npm install -g firebase-tools
 ```
 
