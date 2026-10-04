@@ -1,53 +1,53 @@
 # NetNebula
 
 <p align="center">
-<em>Carte 3D des domaines les plus liés du web : un domaine est un point, un lien est un trait.</em>
+<em>A 3D map of the most linked domains on the web: a domain is a point, a link is a line.</em>
 </p>
 
 <p align="center">
-  <a href="https://github.com/SPTApyo/NetNebula/actions/workflows/build_graph.yml"><img alt="Graphe" src="https://img.shields.io/github/actions/workflow/status/SPTApyo/NetNebula/build_graph.yml?style=flat-square&label=Graphe&color=007cf0" /></a>
-  <a href="https://github.com/SPTApyo/NetNebula/commits/main"><img alt="Mise à jour" src="https://img.shields.io/github/last-commit/SPTApyo/NetNebula?style=flat-square&label=Mise%20%C3%A0%20jour&color=007cf0" /></a>
+  <a href="https://github.com/SPTApyo/NetNebula/actions/workflows/build_graph.yml"><img alt="Graph build" src="https://img.shields.io/github/actions/workflow/status/SPTApyo/NetNebula/build_graph.yml?style=flat-square&label=Graph&color=007cf0" /></a>
+  <a href="https://github.com/SPTApyo/NetNebula/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/SPTApyo/NetNebula?style=flat-square&label=Updated&color=007cf0" /></a>
 </p>
 
-## Principe
+## How it works
 
-NetNebula ne crawle plus le web page par page. Il part du graphe de domaines publié chaque mois par [Common Crawl](https://commoncrawl.org/web-graphs) : plus de 100 millions de domaines et des milliards de liens.
+NetNebula does not crawl the web page by page. It starts from the domain-level web graph that [Common Crawl](https://commoncrawl.org/web-graphs) publishes every month: over 100 million domains and billions of links.
 
-Le pipeline garde les 20 000 domaines les plus centraux (centralité harmonique), retire l'infrastructure (CDN, API, traceurs), garde pour chacun ses 8 liens sortants vers les domaines les mieux classés, calcule une disposition 3D et des communautés, puis écrit un seul fichier : public/graph.json.
+The pipeline keeps the 20,000 most central domains (harmonic centrality) and drops infrastructure (CDNs, APIs, trackers). For each domain it keeps 8 outgoing links: reciprocal links first, then the least cited targets, because linking to a niche site says more than linking to a giant. It then finds communities, lays each one out as its own 3D galaxy, and writes a single file: public/graph.json.
 
-Le site est statique. Il charge ce fichier et dessine la carte en WebGL2, sans base de données.
+The site is static. It loads that file and draws the map with WebGL2, with no database.
 
 ```text
 Common Crawl ──> pipeline/build_graph.py ──> public/graph.json ──> public/ (Firebase Hosting)
-  ranks, vertices, edges     filtre, layout, communautés        viewer WebGL2
+  ranks, vertices, edges     filter, communities, layout        WebGL2 viewer
 ```
 
-## Utilisation
+## Usage
 
-Environnement : `nix develop`, ou Python 3.11+ avec `pip install -r pipeline/requirements.txt`.
+Environment: `nix develop`, or Python 3.11+ with `pip install -r pipeline/requirements.txt`.
 
 ```bash
-npm run test           # tests du pipeline, sans réseau
-npm run graph:small    # graphe de 2 000 domaines
-npm run graph          # graphe complet, environ 10 minutes et 9 Go téléchargés en flux
-npm run serve          # site local sur http://localhost:5000
-npm run deploy         # mise en ligne
+npm run test           # pipeline tests, no network
+npm run graph:small    # 2,000-domain graph
+npm run graph          # full graph, about 7 minutes, 9 GB streamed
+npm run serve          # local site on http://localhost:5000
+npm run deploy         # publish
 ```
 
-Options de build_graph.py : `--size` (nombre de domaines), `--keep` (liens gardés par domaine), `--release` (version Common Crawl, la plus récente par défaut), `--out`.
+build_graph.py options: `--size` (number of domains), `--keep` (links kept per domain), `--release` (Common Crawl graph id, latest by default), `--out`.
 
 ## CI/CD
 
-- build_graph.yml : le 5 de chaque mois et à la demande. Tests, build du graphe si une nouvelle version Common Crawl est sortie, commit de public/graph.json, déploiement.
-- firebase-hosting-merge.yml : tests puis déploiement à chaque push sur main.
-- firebase-hosting-pull-request.yml : tests puis preview sur chaque PR.
+- build_graph.yml: on the 5th of each month and on demand. Runs the tests, rebuilds the graph when Common Crawl has a new release, commits public/graph.json and deploys.
+- firebase-hosting-merge.yml: tests, then deploy on every push to main.
+- firebase-hosting-pull-request.yml: tests, then a preview channel for each pull request.
 
-## Interface
+## Controls
 
-- Glisser pour regarder, WASD pour voler, double-clic pour cibler un domaine.
-- T : tout voir, H : domaine au hasard, P : pause, L : thème clair ou sombre.
-- La recherche filtre les domaines, Entrée vole vers le premier résultat.
+- Drag to look, WASD to fly, double-click a domain to focus.
+- T: view all, H: random domain, P: pause, L: light or dark theme.
+- Search filters domains; Enter flies to the first match.
 
-## Licence
+## License
 
 MIT.

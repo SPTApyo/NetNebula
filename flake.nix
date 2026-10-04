@@ -23,7 +23,7 @@
           shellHook = ''
             echo "NetNebula: $(firebase --version 2>/dev/null || echo 'firebase ?') · $(python --version)"
             echo
-            echo "  python pipeline/build_graph.py --size 2000   # graphe réduit"
+            echo "  python pipeline/build_graph.py --size 2000   # small graph"
             echo "  python pipeline/test_build_graph.py"
             echo "  firebase emulators:start --only hosting      # http://localhost:5000"
             echo
