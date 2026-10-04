@@ -1,68 +1,88 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NetNebula: a map of web links</title>
-    <meta name="description" content="A three-dimensional map of links between web pages.">
-    <meta name="theme-color" content="#04050c">
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='5' fill='%23ffe3ab'/%3E%3Ccircle cx='26' cy='7' r='2' fill='%23a8bfff'/%3E%3Ccircle cx='6' cy='23' r='2.5' fill='%23ff9f7a'/%3E%3C/svg%3E">
-
+    <title>NetNebula: a map of the linked web</title>
+    <meta name="description" content="A three-dimensional map of the 20,000 most linked domains on the web, built from the Common Crawl web graph.">
+    <meta name="theme-color" content="#070a1c">
+    <script>
+        try {
+            const saved = localStorage.getItem('netnebula:theme');
+            const light = saved ? saved === 'light'
+                : matchMedia('(prefers-color-scheme: light)').matches;
+            document.documentElement.dataset.theme = light ? 'light' : 'dark';
+            if (light) document.querySelector('meta[name="theme-color"]').content = '#eef1f6';
+        } catch (error) { /* storage blocked: keep dark */ }
+    </script>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='5' fill='%23ffc46b'/%3E%3Ccircle cx='26' cy='7' r='2' fill='%23a8bfff'/%3E%3Ccircle cx='6' cy='23' r='2.5' fill='%23ff9f7a'/%3E%3C/svg%3E">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700&display=swap">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="preload" href="graph.json" as="fetch" crossorigin>
 </head>
 <body>
-    <canvas id="orb" aria-label="Three-dimensional map of links between web pages" role="img"></canvas>
-    <div id="veil" aria-hidden="true"></div>
+    <canvas id="orb" aria-label="Three-dimensional map of links between web domains" role="img"></canvas>
     <div id="labels" aria-hidden="true"></div>
 
-    <header id="mark">
-        <div class="mark-title-row">
-            <h1>NetNebula</h1>
-            <a class="github-link" href="https://github.com/SPTApyo/NetNebula"
-               target="_blank" rel="noopener noreferrer" title="Open NetNebula on GitHub">
-                GitHub <span aria-hidden="true">↗</span>
-            </a>
-        </div>
-        <p>A map of web links</p>
+    <header id="mark" class="surface">
+        <h1>NetNebula</h1>
+        <p>The most linked domains on the web, drawn as one map.</p>
+        <search id="finder">
+            <input id="search" type="search" placeholder="Find a domain"
+                autocomplete="off" spellcheck="false" aria-label="Find a domain"
+                aria-controls="search-results">
+            <p id="search-count" aria-live="polite"></p>
+            <ul id="search-results"></ul>
+        </search>
     </header>
 
-    <search id="finder">
-         <input id="search" type="search" placeholder="Search for a page"
-             autocomplete="off" spellcheck="false" aria-label="Search for a page">
-        <p id="search-count" aria-live="polite"></p>
-    </search>
+    <div id="corner" class="surface">
+        <a class="github-link" href="https://github.com/SPTApyo/NetNebula"
+            target="_blank" rel="noopener noreferrer">GitHub</a>
+        <button type="button" id="theme" aria-pressed="false" aria-label="Light theme" title="Switch theme (L)">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <g class="sun">
+                    <circle cx="12" cy="12" r="4.2"/>
+                    <path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/>
+                </g>
+                <path class="moon" d="M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6Z"/>
+            </svg>
+        </button>
+    </div>
 
-    <section id="readout" aria-live="polite" aria-label="Map coverage" hidden>
-        <div class="row"><span class="k">Pages</span><span class="v" id="stat-nodes">0</span></div>
-        <div class="row"><span class="k">Links</span><span class="v" id="stat-links">0</span></div>
-        <div class="row"><span class="k">Domains</span><span class="v" id="stat-domains">0</span></div>
-        <div id="survey" hidden>
-            <div id="survey-rule"><i></i></div>
-            <p id="survey-note"></p>
-        </div>
+    <section id="readout" class="surface" aria-label="Map coverage" hidden>
+        <dl>
+            <div class="row"><dt>Domains</dt><dd id="stat-domains">0</dd></div>
+            <div class="row"><dt>Links</dt><dd id="stat-links">0</dd></div>
+        </dl>
+        <p id="stat-source"></p>
     </section>
 
-    <section id="detail" aria-live="polite" hidden>
+    <section id="detail" class="surface" aria-live="polite" hidden>
         <h2 class="d-title"></h2>
         <a class="d-link" target="_blank" rel="noopener noreferrer"></a>
         <dl>
-            <div class="row"><span class="k">Domain</span><span class="v d-domain"></span></div>
-            <div class="row"><span class="k">Outgoing links</span><span class="v d-out"></span></div>
-            <div class="row"><span class="k">Incoming links</span><span class="v d-in"></span></div>
+            <div class="row"><dt>Rank</dt><dd class="d-rank"></dd></div>
+            <div class="row"><dt>Hosts</dt><dd class="d-hosts"></dd></div>
+            <div class="row"><dt>Linked from</dt><dd class="d-in"></dd></div>
+            <div class="row"><dt>Links to</dt><dd class="d-out"></dd></div>
         </dl>
-        <button type="button" class="d-close">Close</button>
+        <div class="d-near-block">
+            <h3>Linked domains</h3>
+            <ul class="d-near"></ul>
+        </div>
+        <button type="button" class="d-close" aria-label="Close details">Close</button>
     </section>
 
-    <nav id="controls" aria-label="Map navigation" hidden>
+    <nav id="controls" class="surface" aria-label="Map navigation" hidden>
         <button type="button" id="c-fit"><span>View all</span><kbd>T</kbd></button>
         <button type="button" id="c-random"><span>Random</span><kbd>H</kbd></button>
-        <button type="button" id="c-pause"><span>Pause</span><kbd>P</kbd></button>
+        <button type="button" id="c-pause" aria-pressed="false"><span>Pause</span><kbd>P</kbd></button>
     </nav>
 
-    <p id="hint" hidden>Drag to look · WASD to fly · double-click to focus</p>
+    <p id="hint" hidden>Drag to look, WASD to fly, double-click a domain to focus</p>
 
     <div id="tip" hidden>
         <span class="t-title"></span>
@@ -70,21 +90,11 @@
     </div>
 
     <div id="overlay">
-        <h2 id="overlay-title">Opening the map</h2>
-        <p id="overlay-text">One moment.</p>
+        <h2 id="overlay-title">Loading the map</h2>
+        <p id="overlay-text">Twenty thousand domains are on their way.</p>
         <button type="button" id="overlay-action" hidden><span></span></button>
     </div>
 
-    <!-- Pinned version + SRI: a compromised CDN cannot substitute its own
-         code. Regenerate the hashes on any version bump.
-         The graph rendering has no dependency at all: gl.js is raw WebGL2, and
-         the layout is computed once by the crawler. -->
-    <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-app-compat.js"
-            integrity="sha384-v/lJoWOxqyu68q535xWEl/T+FG4PqMKgREbN2JclXD9GUqNhqDOW3JZ8/Z9pxYRx"
-            crossorigin="anonymous"></script>
-    <script src="https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore-compat.js"
-            integrity="sha384-wCRjvYUnpDWBXwF2TpPP9Z+dsWaQcjzhW3T5HFBnBOshNLxrUUZD5ccf/mIoMxXd"
-            crossorigin="anonymous"></script>
     <script type="module" src="app.js"></script>
 </body>
 </html>

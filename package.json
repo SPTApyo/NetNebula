@@ -1,13 +1,14 @@
 {
   "name": "netnebula",
   "version": "1.0.0",
-  "description": "An interactive 3D map of the web showing websites and how they are connected.",
+  "description": "A 3D map of the most linked domains on the web, built from the Common Crawl web graph.",
   "private": true,
   "scripts": {
     "serve": "firebase emulators:start --only hosting",
-    "local": "npm run local:dir && firebase emulators:start --only firestore,hosting --project netnebula-local --import .emulator --export-on-exit .emulator",
-    "local:dir": "node -e \"require('fs').mkdirSync('.emulator',{recursive:true})\"",
-    "deploy": "firebase deploy --only hosting,firestore:rules"
+    "test": "python pipeline/test_build_graph.py",
+    "graph": "python pipeline/build_graph.py",
+    "graph:small": "python pipeline/build_graph.py --size 2000",
+    "deploy": "firebase deploy --only hosting"
   },
   "repository": {
     "type": "git",

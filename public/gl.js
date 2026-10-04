@@ -1,31 +1,4 @@
-/**
- * NetNebula WebGL2 rendering engine.
- *
- * Replaces 3d-force-graph, which created one Object3D per node AND per link:
- * measured at 3010 nodes, 30126 draw calls and 0.9 frames per second on an
- * integrated GPU. The cost was in the number of objects, never in the geometry.
- *
- * Here the whole scene fits in three draw calls, whatever the node count:
- *
- *   1. gl.LINES: every edge, one buffer
- *   2. gl.POINTS: wide pale halo
- *   3. gl.POINTS: crisp dot on top
- *
- * The two point passes give the glow without post-processing or a second
- * render target. Nodes carry no geometry: `gl_PointSize` in the vertex shader,
- * disc drawn in the fragment shader from `gl_PointCoord`.
- */
 
-/* ------------------------------------------------------------------- context */
-
-/**
- * Open a WebGL2 context, from the most demanding request to the barest.
- *
- * `powerPreference: "high-performance"` asks for the discrete GPU; on a
- * dual-card machine, or with a partially supported open driver, the browser
- * sometimes prefers to render nothing rather than arbitrate. So we ask again
- * without it, then without anything.
- */
 export function context(canvas) {
   const tries = [
     { antialias: false, alpha: false, powerPreference: 'high-performance' },
@@ -38,8 +11,6 @@ export function context(canvas) {
   }
   return null;
 }
-
-/* -------------------------------------------------------------- 4x4 matrices */
 
 function multiply(a, b) {
   const o = new Float32Array(16);
@@ -63,13 +34,6 @@ function perspective(fov, aspect, near, far) {
   ]);
 }
 
-/**
- * Free camera: a position in the world and a look direction.
- *
- * Orbiting a target meant dragging that target everywhere you wanted to see
- * something. Here you move through the volume as through a space, which is the
- * right gesture for crossing a map.
- */
 function view(yaw, pitch, eye) {
   const cy = Math.cos(yaw), sy = Math.sin(yaw);
   const cp = Math.cos(pitch), sp = Math.sin(pitch);
@@ -82,22 +46,15 @@ function view(yaw, pitch, eye) {
   return multiply(rx, multiply(ry, move));
 }
 
-// The three functions below are the exact inverse of `view` above. Deriving
-// them by eye gives a camera that looks somewhere other than where it is
-// pointed, with nothing to flag the mistake.
-
-/** Unit vector of the gaze, from yaw and pitch. */
 export function forward(yaw, pitch) {
   const cp = Math.cos(pitch);
   return [Math.sin(yaw) * cp, -Math.sin(pitch), -Math.cos(yaw) * cp];
 }
 
-/** Unit vector towards the right of the screen. */
 export function right(yaw) {
   return [Math.cos(yaw), 0, Math.sin(yaw)];
 }
 
-/** Yaw and pitch that look from `eye` towards `point`. */
 export function aim(eye, point) {
   const dx = point[0] - eye[0];
   const dy = point[1] - eye[1];
@@ -105,8 +62,6 @@ export function aim(eye, point) {
   const flat = Math.hypot(dx, dz) || 1e-5;
   return { yaw: Math.atan2(dx, -dz), pitch: Math.atan2(-dy, flat) };
 }
-
-/* ------------------------------------------------------------------- shaders */
 
 function compile(gl, vertexSource, fragmentSource) {
   const shader = (type, source) => {
@@ -128,32 +83,43 @@ function compile(gl, vertexSource, fragmentSource) {
   return p;
 }
 
-// Breathing.
-//
-// Every node oscillates on its own phase, drawn from its identifier. A link
-// endpoint carries the phase and amplitude of the node it touches: without
-// that the strokes come away from their ends and the map falls apart.
-//
-// Detail controls amplitude; distant motion stays calm.
-// while nearby nodes remain alive. It also
-// grows towards the leaves: a heavily linked junction is anchored, an isolated
-// page floats at the end of its branch.
-
-// Hue -> RGB, at the same saturation and lightness as the CSS colour scheme.
-//
-// Interpolating in hue rather than in RGB is the whole point: between a red
-// and a blue, the RGB average is a muddy grey, the hue average is a violet.
-// That is what we want to see on a link crossing two domains.
 const TONE = `
-  const float TONE_S = 0.62;
-  const float TONE_L = 0.66;
-  vec3 toneOf(float hue) {
+  vec3 toneOf(float hue, float l, float s) {
     vec3 base = clamp(
       abs(mod(fract(hue) * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0,
       0.0, 1.0);
-    float chroma = (1.0 - abs(2.0 * TONE_L - 1.0)) * TONE_S;
-    return (base - 0.5) * chroma + TONE_L;
+    float chroma = (1.0 - abs(2.0 * l - 1.0)) * s;
+    return (base - 0.5) * chroma + l;
   }`;
+
+// Theme waves: wobbling circular fronts in screen pixels, oldest first.
+// uWaves[i] = origin x, origin y, radius, unused. Look 0 is the base
+// theme, look i + 1 the theme wave i brings. A look is tone lightness,
+// saturation and how much a fragment covers instead of adding light.
+const MAX_WAVES = 6;
+const WAVE = `
+  const int MAX_WAVES = ${MAX_WAVES};
+  uniform highp vec4 uWaves[MAX_WAVES];
+  uniform int uWaveCount;
+  uniform highp float uClock;
+  uniform vec3 uLooks[MAX_WAVES + 1];
+  highp float frontOf(highp vec2 frag, highp vec4 wave) {
+    highp vec2 d = frag - wave.xy;
+    highp float a = atan(d.y, d.x);
+    highp float swell = min(1.0, wave.z / 240.0);
+    highp float wobble = 26.0 * sin(a * 5.0 + uClock * 2.3)
+                 + 12.0 * sin(a * 9.0 - uClock * 3.7);
+    return length(d) - wave.z - wobble * swell;
+  }
+  float maskOf(int i, highp vec2 frag) {
+    return smoothstep(1.5, -1.5, frontOf(frag, uWaves[i]));
+  }
+  vec3 lookAt(highp vec2 frag) {
+    vec3 look = uLooks[0];
+    for (int i = 0; i < uWaveCount; i++) look = mix(look, uLooks[i + 1], maskOf(i, frag));
+    return look;
+  }
+`;
 
 const MOTION = `
   uniform float uTime;
@@ -168,13 +134,6 @@ const MOTION = `
   }
 `;
 
-// Close near plane, and the fade that makes it bearable.
-//
-// A point is only a vertex: past the near plane the GPU rejects it whole. A
-// real object would have extent and would slide off to the side; the point
-// vanishes outright. It cannot have extent without geometry,
-// so it is faded out on approach instead, which reads as passing through
-// rather than as a disappearing trick.
 const NEAR = `
   const float NEAR_CLIP = 0.004;
   const float NEAR_FULL = 0.16;
@@ -184,14 +143,6 @@ const NEAR = `
   }
 `;
 
-// Depth attenuation.
-//
-// Nothing ever disappears because of where the camera is: a landmark that
-// fades while you steer towards it makes navigation impossible. What is far is
-// merely darker, and sharpens again as you approach.
-//
-// The floor is what separates atmospheric perspective from a vanishing act:
-// even at the edge of the map, a node stays perceptible.
 const DEPTH = `
   const float DEPTH_NEAR = 0.30;
   const float DEPTH_FAR = 7.0;
@@ -216,12 +167,13 @@ const DOT_VERTEX = `#version 300 es
   // mediump on both sides: the fragment reads the same uniform, and GLSL
   // requires the declared precision to match.
   uniform mediump float uGlow;
+  uniform mediump float uGas;
+  uniform float uMaxPoint;
   uniform float uMarked;
   ${DEPTH}
   ${NEAR}
   ${MOTION}
-  ${TONE}
-  out vec3 vTint;
+  out vec2 vTone;
   out float vDim;
   out float vMark;
   out float vDetail;
@@ -237,6 +189,10 @@ const DOT_VERTEX = `#version 300 es
     float size = clamp(
       uPx * (aSize + uGlow * 2.5 + vMark * 5.0) / max(probe.w, NEAR_CLIP),
       1.0, 58.0);
+    // Gas: wide faint puffs whose overlap reads as a cloud.
+    if (uGas > 0.5) {
+      size = clamp(uPx * (aSize * 2.5 + 9.0) / max(probe.w, NEAR_CLIP), 2.0, uMaxPoint);
+    }
 
     // Detail neither opens nor closes anything: it enriches. Coming closer
     // adds shape and motion, it never takes a landmark away.
@@ -260,16 +216,19 @@ const DOT_VERTEX = `#version 300 es
     // aDim carries the dimming requested by the search: what does not match
     // fades without ever leaving the map.
     vDim = depthFade(p.w) * nearFade(p.w) * weight * aDim;
-    vTint = toneOf(aTone.x) * aTone.y;
+    vTone = aTone;
   }`;
 
 const DOT_FRAGMENT = `#version 300 es
   precision mediump float;
-  in vec3 vTint;
+  in vec2 vTone;
   in float vDim;
   in float vMark;
   in float vDetail;
-  uniform vec3 uHot;
+  uniform vec3 uHots[${MAX_WAVES + 1}];
+  uniform mediump float uGas;
+  ${TONE}
+  ${WAVE}
   uniform float uAlpha;
   // Declared in both stages: it is the same uniform, and the fragment needs it
   // to know which of the two passes it is drawing.
@@ -287,12 +246,21 @@ const DOT_FRAGMENT = `#version 300 es
     // is what kept the map black until a cluster piled hundreds of points on
     // the same spot.
     //
-    // Small points render nearly solid.
-    // the large ones, which have the room, keep a gradient. The glow stays
-    // soft in every case: that is its job.
+    // Small points render nearly solid, large ones keep a gradient.
     a = pow(a, mix(mix(1.2, 6.0, vDetail), 3.0, uGlow));
-    vec3 c = mix(vTint, uHot, vMark);
-    frag = vec4(c, a * vDim * uAlpha * (1.0 + 3.0 * vMark));
+    if (uGas > 0.5) a = exp(-d * d * 4.0) * (1.0 - d);
+    vec3 look = uLooks[0];
+    vec3 hot = uHots[0];
+    for (int i = 0; i < uWaveCount; i++) {
+      float m = maskOf(i, gl_FragCoord.xy);
+      look = mix(look, uLooks[i + 1], m);
+      hot = mix(hot, uHots[i + 1], m);
+    }
+    vec3 tint = toneOf(vTone.x, look.x, look.y) * mix(1.0, vTone.y, 1.0 - look.z);
+    vec3 c = mix(tint, hot, vMark * (1.0 - uGas));
+    float alpha = min(1.0, a * vDim * uAlpha * (1.0 + 3.0 * vMark));
+    // Premultiplied: look.z 0 adds light, 1 paints over.
+    frag = vec4(c * alpha, alpha * look.z);
   }`;
 
 const LINE_VERTEX = `#version 300 es
@@ -320,21 +288,9 @@ const LINE_VERTEX = `#version 300 es
     vec4 p = uMVP * vec4(breathe(aPos, aPhase, aAmp * (0.25 + 0.75 * detail)), 1.0);
     gl_Position = p;
 
-    // Each endpoint carries the hue of its node, and the rasteriser
-    // Interpolate both values directly.
-    // Wikipedia to YouTube passes through violet rather than through a grey.
-    // The conversion happens in the fragment shader, otherwise the
-    // interpolation would fall back to RGB. A link inside one domain stays a
-    // Flat hue recedes; crossings stand out.
-    // of the map, so it is given more intensity too.
+    // Hue is interpolated, converted to RGB per fragment.
     vTone = aTone;
-    // Fifty thousand additive strokes converging in a tight cluster burn its
-    // heart to white. The opacity of a link has to be reasoned about for
-    // density, not for one isolated stroke.
-    // aBoost says how much the edge deserves to be seen: tree structure,
-    // domain crossing, junction. Seven times the opacity between a structural
-    // Crossings add depth to the map.
-    // hairball, where everything is drawn with the same force.
+    // aBoost favours tree, crossing and junction links.
     vAlpha = (0.004 + 0.075 * aBoost) * uExposure
            * depthFade(p.w) * nearFade(p.w) * aDim;
   }`;
@@ -344,51 +300,163 @@ const LINE_FRAGMENT = `#version 300 es
   in float vAlpha;
   in vec2 vTone;
   ${TONE}
+  ${WAVE}
   out vec4 frag;
-  void main() { frag = vec4(toneOf(vTone.x) * vTone.y, vAlpha); }`;
+  void main() {
+    vec3 look = lookAt(gl_FragCoord.xy);
+    vec3 c = toneOf(vTone.x, look.x, look.y) * mix(1.0, vTone.y, 1.0 - look.z);
+    float alpha = min(1.0, vAlpha * mix(1.0, 1.4, look.z));
+    frag = vec4(c * alpha, alpha * look.z);
+  }`;
 
-/* ----------------------------------------------------------------- rendering */
+const SKY_VERTEX = `#version 300 es
+  void main() {
+    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+  }`;
 
-const TARGET_MS = 16.7; // 60 frames per second
+// Background: theme colour swept by the waves, plus a far starfield and
+// faint nebula clouds drawn from the view direction, so they turn with
+// the camera. Each crest is a gaussian ridge lit from the upper left,
+// which gives the wave its relief; fading ripples trail behind it.
+const SKY_FRAGMENT = `#version 300 es
+  precision highp float;
+  uniform vec3 uSkies[${MAX_WAVES + 1}];
+  uniform vec3 uCrests[${MAX_WAVES + 1}];
+  uniform mat3 uInvRot;
+  uniform vec2 uLens;
+  uniform vec2 uViewport;
+  ${WAVE}
+  out vec4 frag;
 
-// Initial vertical field of view, and the bounds of the scroll wheel.
+  float hash(vec3 p) {
+    p = fract(p * 0.3183099 + 0.1);
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+  }
+
+  float noise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x),
+                   mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
+               mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x),
+                   mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+  }
+
+  float fbm(vec3 p) {
+    float sum = 0.0;
+    float amp = 0.5;
+    for (int i = 0; i < 4; i++) {
+      sum += amp * noise(p);
+      p = p * 2.03 + 11.7;
+      amp *= 0.5;
+    }
+    return sum;
+  }
+
+  void main() {
+    vec2 frag2 = gl_FragCoord.xy;
+    vec3 sky = uSkies[0];
+    vec3 look = uLooks[0];
+    for (int i = 0; i < uWaveCount; i++) {
+      vec4 wave = uWaves[i];
+      float r = frontOf(frag2, wave);
+      float m = smoothstep(1.5, -1.5, r);
+      sky = mix(sky, uSkies[i + 1], m);
+      look = mix(look, uLooks[i + 1], m);
+
+      vec2 d = frag2 - wave.xy;
+      float width = 34.0 + 0.04 * wave.z;
+      float ridge = exp(-(r * r) / (width * width));
+      float slope = -2.0 * r / width * ridge;
+      vec3 normal = normalize(vec3(-normalize(d + 1e-4) * slope * 1.4, 1.0));
+      float light = dot(normal, normalize(vec3(-0.45, 0.55, 0.7)));
+      float behind = max(-r, 0.0);
+      float ripple = sin(behind / 22.0 - uClock * 6.0) * exp(-behind / 160.0);
+      sky += uCrests[i + 1] * (0.55 * ridge + 0.06 * ripple * m)
+           + (light - 0.7) * ridge * 0.6;
+    }
+
+    vec2 ndc = frag2 / uViewport * 2.0 - 1.0;
+    vec3 dir = normalize(uInvRot * vec3(ndc * uLens, -1.0));
+
+    float cloud = fbm(dir * 2.6);
+    float tint = fbm(dir * 1.3 + 7.0);
+    vec3 gas = mix(vec3(0.36, 0.20, 0.62), vec3(0.10, 0.42, 0.55), tint);
+    float density = smoothstep(0.45, 0.85, cloud);
+
+    vec3 cell = floor(dir * 160.0);
+    vec3 offset = vec3(hash(cell + 1.3), hash(cell + 7.1), hash(cell + 3.7)) - 0.5;
+    float seed = hash(cell);
+    float star = step(0.975, seed)
+      * smoothstep(0.22, 0.0, length(fract(dir * 160.0) - 0.5 - offset * 0.5))
+      * (0.55 + 0.45 * sin(uClock * (1.0 + seed * 3.0) + seed * 40.0));
+
+    vec3 night = gas * density * 0.16 + vec3(0.85, 0.88, 1.0) * star * 0.7;
+    vec3 day = (gas - 0.5) * density * 0.07;
+    sky += mix(night, day, look.z);
+    frag = vec4(clamp(sky, 0.0, 1.0), 1.0);
+  }`;
+
+const TARGET_MS = 16.7;
+
 const DEFAULT_FOV = 0.85;
 const MIN_FOV = 0.35;
 const MAX_FOV = 1.6;
 
 const NEAR_MIN = 0.004;
 
-/** Same curve as the GLSL function of the same name. */
+// Gas puffs drawn per quality level, best ranked domains first.
+const GAS_POINTS = [0, 3000, 8000];
+
+// Column-major inverse of the camera rotation built by view().
+function inverseRotation(yaw, pitch) {
+  const v = view(yaw, pitch, [0, 0, 0]);
+  return new Float32Array([v[0], v[4], v[8], v[1], v[5], v[9], v[2], v[6], v[10]]);
+}
+
 function smoothstep(a, b, x) {
   const t = Math.min(Math.max((x - a) / (b - a), 0), 1);
   return t * t * (3 - 2 * t);
 }
 
-// Automatic exposure: target screen coverage, bounds, and the rate at which
-// exposure reaches its target (per frame).
 const EXPOSE_SAMPLES = 512;
 const EXPOSE_TARGET = 0.14;
 const EXPOSE_MIN = 0.5;
 const EXPOSE_MAX = 40;
 const EXPOSE_RATE = 0.06;
 
+const WAVE_UNIFORMS = ['uWaves', 'uWaveCount', 'uClock', 'uLooks'];
+
+// Front speed of the theme wave, in CSS pixels per millisecond.
+export const WAVE_SPEED = 1.9;
+
 export class Renderer {
-  constructor(canvas, palette) {
+  // themes: { name: { sky, hot, crest, look } }, colors in 0..1.
+  constructor(canvas, themes, theme) {
     this.canvas = canvas;
     this.gl = context(canvas);
     if (!this.gl) throw new Error('WebGL2 unavailable');
 
     const gl = this.gl;
-    this.ink = palette.ink;
-    this.hot = palette.hot;
-    this.background = palette.background;
+    this.themes = themes;
+    this.base = theme;
+    this.waves = [];
 
     this.dotProgram = compile(gl, DOT_VERTEX, DOT_FRAGMENT);
     this.lineProgram = compile(gl, LINE_VERTEX, LINE_FRAGMENT);
+    this.skyProgram = compile(gl, SKY_VERTEX, SKY_FRAGMENT);
     this.dotU = this.uniforms(this.dotProgram,
-      ['uMVP', 'uPx', 'uGlow', 'uMarked', 'uHot', 'uAlpha', 'uTime', 'uSway']);
+      ['uMVP', 'uPx', 'uGlow', 'uGas', 'uMaxPoint', 'uMarked', 'uHots', 'uAlpha',
+        'uTime', 'uSway', ...WAVE_UNIFORMS]);
     this.lineU = this.uniforms(this.lineProgram,
-      ['uMVP', 'uPx', 'uTime', 'uSway', 'uExposure']);
+      ['uMVP', 'uPx', 'uTime', 'uSway', 'uExposure', ...WAVE_UNIFORMS]);
+    this.skyU = this.uniforms(this.skyProgram,
+      ['uSkies', 'uCrests', 'uInvRot', 'uLens', 'uViewport', ...WAVE_UNIFORMS]);
+    this.maxPoint = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1];
+    this.emptyVao = gl.createVertexArray();
 
     this.buffers = [];
     this.vaos = [];
@@ -398,11 +466,8 @@ export class Renderer {
     this.sizes = null;
     this.ranks = null;
 
-    // Automatic exposure; see expose().
     this.exposure = 1;
 
-    // Free camera: a position and a gaze. The gaze is computed, never guessed
-    // A fixed yaw would aim beside the map.
     this.eye = new Float32Array([1.1, 0.7, 2.1]);
     const start = aim(this.eye, [0, 0, 0]);
     this.yaw = start.yaw;
@@ -410,16 +475,12 @@ export class Renderer {
     this.fov = DEFAULT_FOV;
     this.mvp = null;
 
-    // Governor: 2 = full fidelity, 0 = the gentlest. It never removes a node,
-    // it softens the rendering.
     this.quality = 2;
     this.ema = TARGET_MS;
     this.holdUntil = 0;
     this.lastRetry = 0;
     this.auto = true;
 
-    // Cut to zero under prefers-reduced-motion: the map holds still instead of
-    // breathing.
     this.sway = window.matchMedia('(prefers-reduced-motion: reduce)').matches
       ? 0 : 1;
 
@@ -448,7 +509,6 @@ export class Renderer {
     this.buffers.push(buffer);
   }
 
-  /** Hand the buffers of the previous scene back to the driver. */
   release() {
     const gl = this.gl;
     for (const b of this.buffers) gl.deleteBuffer(b);
@@ -457,14 +517,6 @@ export class Renderer {
     this.vaos = [];
   }
 
-  /**
-   * Upload the scene. Everything is static afterwards: not a single buffer
-   * write while the graph does not change.
-   *
-   * `rank` orders nodes from the most connected to the least. The governor
-   * uses it as a cut-off: leaves go first, never the junctions that carry the
-   * structure.
-   */
   upload({ positions, sizes, tones, ranks, dims, phases, amps,
            edgePositions, edgeTones, edgeBoost, edgeDims,
            edgePhases, edgeAmps }) {
@@ -503,22 +555,6 @@ export class Renderer {
     gl.bindVertexArray(null);
   }
 
-  /**
-   * Automatic exposure.
-   *
-   * Additive blending makes screen brightness depend on how many points
-   * overlap: an opacity that suits a cluster leaves an isolated page
-   * invisible, and the reverse burns the heart of clusters to white. No fixed
-  * Exposure adapts to the visible range.
-   * actually on screen.
-   *
-   * Covered area is estimated over a sample of constant size: measuring it
-   * exactly would mean reading the framebuffer back, which synchronises the
-   * GPU and costs more than all the rest of the rendering.
-   *
-   * The smoothing is not cosmetic: without it, exposure follows every camera
-   * movement and the map pulses.
-   */
   expose(dpr, height) {
     if (!this.positions || !this.count || !this.mvp) return;
 
@@ -537,16 +573,10 @@ export class Renderer {
       if (w <= 0.004) continue;
       const sx = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w;
       const sy = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
-      // A margin: a point whose centre leaves the frame still lights its edge,
-      // and counting it avoids an exposure jump as it crosses.
+
       if (Math.abs(sx) > 1.15 || Math.abs(sy) > 1.15) continue;
       const size = Math.min(Math.max(px * (this.sizes[i] + 1.0) / w, 1), 58);
-      // What counts is not the square occupied but the light it emits: the
-      // fragment falloff empties nearly all of a large disc. Without this
-      // correction a few nearby nodes saturate the estimate and exposure stays
-      // pinned to its floor while the map is black. The integral of
-      // pow(smoothstep, n) over the disc is 2 / ((n+1)(n+2)); n is the
-      // exponent chosen by the fragment shader.
+
       const n = 1.2 + 4.8 * smoothstep(3, 24, size);
       area += size * size * (2 / ((n + 1) * (n + 2)));
     }
@@ -559,11 +589,6 @@ export class Renderer {
     this.exposure += (want - this.exposure) * EXPOSE_RATE;
   }
 
-  /**
-   * Find the node nearest the cursor by projecting the positions onto the
-   * screen. No GPU readback, no object to intersect: one loop over a
-   * Float32Array, and only when the mouse has moved.
-   */
   pick(width, height) {
     if (!this.positions || !this.mvp) return -1;
     const m = this.mvp;
@@ -586,27 +611,15 @@ export class Renderer {
     return best;
   }
 
-  /**
-   * Aim for 60 frames per second by degrading fidelity, never content.
-   *
-   * The previous version hid nodes. Because it reacted to the frame rate, it
-  * Batch hidden nodes while the camera rests.
-   * disappearing for no perceptible reason, which is exactly what this design
-   * has tried to banish from the start.
-   *
-   * Three steps: the glow first, which costs one draw call and a lot of fill;
-   * then pixel density. A softer map is still a whole map.
-   */
   adapt(dt, now) {
-    if (dt < 100) this.ema += (dt - this.ema) * 0.06; // hidden tab: ignored
+    if (dt < 100) this.ema += (dt - this.ema) * 0.06;
     if (!this.auto || now < this.holdUntil) return;
 
     if (this.ema > TARGET_MS * 1.15 && this.quality > 0) {
       this.quality -= 1;
       this.holdUntil = now + 1500;
       this.lastRetry = now;
-    // Guard delay before trying again: without it the governor would step back
-    // up immediately after stepping down, and oscillate between two states.
+
     } else if (this.ema < TARGET_MS * 0.9 && this.quality < 2
                && now - this.lastRetry > 5000) {
       this.quality += 1;
@@ -624,7 +637,7 @@ export class Renderer {
     this.adapt(dt, now);
 
     const gl = this.gl;
-    // Past 1.5 the visual gain does not pay for the pixels to fill.
+
     const seconds = now / 1000;
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5)
       * [0.7, 0.85, 1][this.quality];
@@ -634,26 +647,45 @@ export class Renderer {
     if (this.canvas.height !== (height * dpr | 0)) this.canvas.height = height * dpr | 0;
 
     this.mvp = multiply(
-      // Very close near plane: with the depth test disabled its precision does
-      // not matter here, and pushing it back costs nothing.
+
       perspective(this.fov, width / height, 0.004, 80),
       view(this.yaw, this.pitch, this.eye));
 
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.clearColor(this.background[0], this.background[1], this.background[2], 1);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    // No depth test, additive blending: nothing to sort, and the layers stack
-    // up into volume.
     gl.disable(gl.DEPTH_TEST);
+
+    const waves = this.waveState(now, dpr, height);
+    const themes = [this.base, ...this.waves.map((w) => w.theme)]
+      .map((name) => this.themes[name]);
+    const pack = (key) => new Float32Array(themes.flatMap((t) => t[key]));
+    const setWave = (u) => {
+      gl.uniform4fv(u.uWaves, waves);
+      gl.uniform1i(u.uWaveCount, this.waves.length);
+      gl.uniform1f(u.uClock, (now / 1000) % 1000);
+      gl.uniform3fv(u.uLooks, pack('look'));
+    };
+
+    gl.disable(gl.BLEND);
+    gl.useProgram(this.skyProgram);
+    setWave(this.skyU);
+    gl.uniform3fv(this.skyU.uSkies, pack('sky'));
+    gl.uniform3fv(this.skyU.uCrests, pack('crest'));
+    gl.uniformMatrix3fv(this.skyU.uInvRot, false, inverseRotation(this.yaw, this.pitch));
+    const tan = Math.tan(this.fov / 2);
+    gl.uniform2f(this.skyU.uLens, tan * width / height, tan);
+    gl.uniform2f(this.skyU.uViewport, this.canvas.width, this.canvas.height);
+    gl.bindVertexArray(this.emptyVao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     if (this.edges) {
       gl.useProgram(this.lineProgram);
+      setWave(this.lineU);
       gl.uniformMatrix4fv(this.lineU.uMVP, false, this.mvp);
       gl.uniform1f(this.lineU.uPx, dpr * height * 0.016);
-      // Links follow the same exposure as points: otherwise a sparse view
-      // would show legible nodes joined by invisible strokes.
+
       gl.uniform1f(this.lineU.uExposure, this.exposure);
       gl.uniform1f(this.lineU.uTime, seconds);
       gl.uniform1f(this.lineU.uSway, this.sway);
@@ -665,27 +697,31 @@ export class Renderer {
     gl.uniformMatrix4fv(this.dotU.uMVP, false, this.mvp);
     gl.uniform1f(this.dotU.uTime, seconds);
     gl.uniform1f(this.dotU.uSway, this.sway);
-    // Point size factor. Too low and the nodes become pinpricks, taking all
-    // the colour of the map with them.
+
     gl.uniform1f(this.dotU.uPx, dpr * height * 0.016);
     gl.uniform1f(this.dotU.uMarked, this.marked);
     this.expose(dpr, height);
-    gl.uniform3fv(this.dotU.uHot, this.hot);
+    setWave(this.dotU);
+    gl.uniform3fv(this.dotU.uHots, pack('hot'));
+    gl.uniform1f(this.dotU.uMaxPoint, this.maxPoint);
+    gl.uniform1f(this.dotU.uGas, 0);
     gl.bindVertexArray(this.dotVao);
 
-    // Two passes: wide, very pale halo, then the crisp dot. Glow with no
-    // post-processing and no second render target.
-    // The glow is the first luxury to drop when the machine struggles: one
-    // draw call and a great deal of fill, for a halo.
+    if (this.quality >= 1) {
+      gl.uniform1f(this.dotU.uGas, 1);
+      gl.uniform1f(this.dotU.uGlow, 0);
+      gl.uniform1f(this.dotU.uAlpha, 0.012 * this.exposure);
+      gl.drawArrays(gl.POINTS, 0, Math.min(this.count, GAS_POINTS[this.quality]));
+      gl.uniform1f(this.dotU.uGas, 0);
+    }
+
     if (this.quality >= 2) {
       gl.uniform1f(this.dotU.uGlow, 1);
       gl.uniform1f(this.dotU.uAlpha, 0.018 * this.exposure);
       gl.drawArrays(gl.POINTS, 0, this.count);
     }
     gl.uniform1f(this.dotU.uGlow, 0);
-    // Additive blending has no ceiling: fifty overlapping points sum their
-    // opacities. With no layers to divide by, the base opacity is what has to
-    // be low. At 0.5 the heart of a cluster burned to white.
+
     gl.uniform1f(this.dotU.uAlpha, 0.1 * this.exposure);
     gl.drawArrays(gl.POINTS, 0, this.count);
 
@@ -701,6 +737,51 @@ export class Renderer {
     }
   }
 
+  // Theme the latest wave leads to.
+  get theme() {
+    return this.waves.length ? this.waves[this.waves.length - 1].theme : this.base;
+  }
+
+  // Send a theme wave from (x, y) in CSS pixels; returns its duration.
+  // Waves stack: a new one starts while older ones still travel.
+  setTheme(theme, x, y, animate) {
+    if (theme === this.theme) return 0;
+    if (!animate) {
+      this.base = theme;
+      this.waves = [];
+      return 0;
+    }
+    const width = this.canvas.clientWidth;
+    const height = this.canvas.clientHeight;
+    const reach = Math.max(Math.hypot(x, y), Math.hypot(width - x, y),
+      Math.hypot(x, height - y), Math.hypot(width - x, height - y)) + 80;
+    this.waves.push({ theme, start: performance.now(), x, y, reach });
+    // ponytail: beyond MAX_WAVES the oldest lands at once
+    if (this.waves.length > MAX_WAVES) this.base = this.waves.shift().theme;
+    return reach / WAVE_SPEED;
+  }
+
+  // Theme shown at (x, y) CSS pixels, wobble ignored.
+  themeAt(x, y, now = performance.now()) {
+    let theme = this.base;
+    for (const w of this.waves) {
+      if (Math.hypot(x - w.x, y - w.y) < (now - w.start) * WAVE_SPEED) theme = w.theme;
+    }
+    return theme;
+  }
+
+  // Retire waves that covered the screen; pack the rest for the GPU.
+  waveState(now, dpr, height) {
+    while (this.waves.length && (now - this.waves[0].start) * WAVE_SPEED > this.waves[0].reach) {
+      this.base = this.waves.shift().theme;
+    }
+    const packed = new Float32Array(MAX_WAVES * 4);
+    this.waves.forEach((w, i) => {
+      packed.set([w.x * dpr, (height - w.y) * dpr, (now - w.start) * WAVE_SPEED * dpr, 0], i * 4);
+    });
+    return packed;
+  }
+
   start() {
     if (this.running) return;
     this.running = true;
@@ -712,10 +793,6 @@ export class Renderer {
     this.running = false;
   }
 
-  /**
-   * Projection factor: how many pixels a radius of one unit spans when placed
-   * one unit deep. This is what converts a world size into a screen size.
-   */
   get focal() {
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     return (this.canvas.height || dpr * 900) / (2 * Math.tan(this.fov / 2));
@@ -725,7 +802,6 @@ export class Renderer {
     this.fov = Math.max(MIN_FOV, Math.min(MAX_FOV, fov));
   }
 
-  /** Move the camera in its own frame: ahead, right, up. */
   move(ahead, side, up) {
     const f = forward(this.yaw, this.pitch);
     const r = right(this.yaw);
@@ -735,13 +811,6 @@ export class Renderer {
     this.eye[1] += up;
   }
 
-  /**
-   * Extent actually occupied by what is loaded.
-   *
-   * Framing on an assumed radius gave a tiny nebula in the middle of a void:
-   * while a single domain has been surveyed, the map occupies only a fifth of
-   * the available volume.
-   */
   extent() {
     if (this._extent) return this._extent;
     if (!this.positions || !this.count) return { center: [0, 0, 0], radius: 1 };
@@ -765,13 +834,6 @@ export class Renderer {
     return this._extent;
   }
 
-  /**
-   * Travel step scaled to how far away the content is.
-   *
-   * A fixed step takes fifty gestures to cross a map seen from afar, and
-   * shoots straight through a cluster seen from close up. Speed follows the
-   * distance to the content, as in any 3D viewer.
-   */
   travelScale() {
     const { center, radius } = this.extent();
     const d = Math.hypot(
@@ -779,24 +841,20 @@ export class Renderer {
     return Math.max(radius * 0.02, Math.min(d, radius * 4) * 0.1);
   }
 
-  /** Distance from which a sphere of this radius fits in the frame. */
   distanceFor(radius) {
     return (radius * 1.25) / Math.tan(this.fov / 2);
   }
 
-  /** Point the gaze at a place in the world. */
   lookAt(point) {
     const a = aim(this.eye, point);
     this.yaw = a.yaw;
     this.pitch = a.pitch;
   }
 
-  /** Draw calls actually issued: 2, or 3 with the glow pass. */
   get drawCalls() {
-    return (this.edges ? 1 : 0) + (this.quality >= 2 ? 2 : 1);
+    return 1 + (this.edges ? 1 : 0) + (this.quality >= 2 ? 3 : this.quality);
   }
 
-  /** Observed frames per second, for the diagnostic readout. */
   get fps() {
     return Math.round(1000 / Math.max(this.ema, 0.1));
   }
