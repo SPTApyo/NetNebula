@@ -1,0 +1,62 @@
+name: Build web graph
+
+on:
+  schedule:
+    - cron: '0 4 5 * *'
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Common Crawl graph id (latest when empty)
+        required: false
+      size:
+        description: Number of domains
+        required: false
+        default: '20000'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: pipeline/requirements.txt
+
+      - run: pip install -r pipeline/requirements.txt
+
+      - run: python pipeline/test_build_graph.py
+
+      - name: Build graph.json
+        env:
+          RELEASE: ${{ inputs.release }}
+          SIZE: ${{ inputs.size || '20000' }}
+        run: python pipeline/build_graph.py --size "$SIZE" ${RELEASE:+--release "$RELEASE"}
+
+      - name: Commit snapshot
+        id: commit
+        run: |
+          if git diff --quiet public/graph.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/graph.json
+          git commit -m "chore: mise à jour du graphe $(python -c 'import json;print(json.load(open("public/graph.json"))["release"])')"
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - if: steps.commit.outputs.changed == 'true'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_NETNEBULA_EB9EB }}
+          channelId: live
+          projectId: netnebula-eb9eb
