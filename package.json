@@ -14,7 +14,7 @@
     "type": "git",
     "url": "git+https://github.com/SPTApyo/NetNebula.git"
   },
-  "license": "ISC",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/SPTApyo/NetNebula/issues"
   },
