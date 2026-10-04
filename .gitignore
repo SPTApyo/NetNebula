@@ -1,55 +1,26 @@
 # Logs
-logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-firebase-debug.log*
-firebase-debug.*.log*
 
-# Firebase cache, local emulator state and its exports
+# Firebase CLI cache
 .firebase/
-.emulator/
-firebase-export-*/
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Coverage directories
-coverage
-.nyc_output
 
 # Node.js
 node_modules/
-build/Release
-.npm
-.yarn-integrity
-.eslintcache
-.node_repl_history
-*.tgz
 
-# Secrets. .env.example is the template and is tracked; nothing else here is.
+# Secrets
 .env
 .env.*
-!.env.example
-scrapper/serviceAccountKey.json
 *serviceAccount*.json
 
 # Python
 __pycache__/
 *.py[cod]
 .venv/
-.ruff_cache/
-.pytest_cache/
 
 # Nix
 result
 result-*
 .direnv/
-.cache/
 
 # Editor and local tooling state
 .idea/

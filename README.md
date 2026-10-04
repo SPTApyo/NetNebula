@@ -37,10 +37,11 @@ Common Crawl ──> pipeline/build_graph.py ──> public/graph.json ──> p
   ranks, vertices, edges     filter, communities, layout        WebGL2 viewer
 ```
 
-1. The ranks file is sorted by harmonic centrality, so the top domains are read from its first lines.
+1. The ranks file is sorted by harmonic centrality, so the top domains are read from its first lines. Infrastructure domains are skipped.
 2. The vertices file maps them to ids, and one streamed pass over the edges file (about 9 GB) keeps the links between them.
-3. igraph finds the communities and lays each one out in 3D.
-4. Everything is written to public/graph.json, about 2.3 MB for 20,000 domains and 131,000 links.
+3. Each domain keeps its 8 most telling links: reciprocal ones first, then the least cited targets.
+4. igraph finds the communities and lays each one out in 3D.
+5. Everything is written to public/graph.json, about 2.3 MB for 20,000 domains and 131,000 links.
 
 Nothing is stored between runs: the pipeline is a stateless job.
 
