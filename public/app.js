@@ -221,45 +221,56 @@ function upload() {
 }
 
 function bindCamera(canvas) {
-  let looking = false;
-  let lastX = 0;
-  let lastY = 0;
+  const pointers = new Map();
   let pinch = 0;
+  let travel = 0;
 
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
   canvas.addEventListener('pointerdown', (e) => {
-    looking = true;
-    lastX = e.clientX;
-    lastY = e.clientY;
+    if (!pointers.size) travel = 0;
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    pinch = 0;
     canvas.setPointerCapture(e.pointerId);
   });
 
   canvas.addEventListener('pointermove', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    renderer.mouse.x = e.clientX - rect.left;
-    renderer.mouse.y = e.clientY - rect.top;
-    renderer.mouse.moved = true;
-    if (!looking) return;
+    if (e.pointerType !== 'touch') {
+      const rect = canvas.getBoundingClientRect();
+      renderer.mouse.x = e.clientX - rect.left;
+      renderer.mouse.y = e.clientY - rect.top;
+      renderer.mouse.moved = true;
+    }
+    const last = pointers.get(e.pointerId);
+    if (!last) return;
+    const dx = e.clientX - last[0];
+    const dy = e.clientY - last[1];
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    travel += Math.abs(dx) + Math.abs(dy);
 
-    renderer.yaw += (e.clientX - lastX) * 0.004;
-    renderer.pitch += (e.clientY - lastY) * 0.004;
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      if (pinch) renderer.move((d - pinch) * 0.01 * renderer.travelScale(), 0, 0);
+      pinch = d;
+      return;
+    }
+    if (pointers.size > 1) return;
 
-    renderer.pitch = Math.max(-1.45, Math.min(1.45, renderer.pitch));
-    lastX = e.clientX;
-    lastY = e.clientY;
+    renderer.yaw += dx * 0.004;
+    renderer.pitch = Math.max(-1.45, Math.min(1.45, renderer.pitch + dy * 0.004));
   });
 
   const release = (e) => {
-    looking = false;
-    if (e && e.pointerId !== undefined && canvas.hasPointerCapture(e.pointerId)) {
-      canvas.releasePointerCapture(e.pointerId);
-    }
+    pointers.delete(e.pointerId);
+    pinch = 0;
+    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
   };
   canvas.addEventListener('pointerup', release);
   canvas.addEventListener('pointercancel', release);
 
-  canvas.addEventListener('pointerleave', () => {
+  canvas.addEventListener('pointerleave', (e) => {
+    if (e.pointerType === 'touch') return;
     renderer.mouse.x = -1;
     renderer.mouse.moved = true;
   });
@@ -269,20 +280,16 @@ function bindCamera(canvas) {
     renderer.setFov(renderer.fov + e.deltaY * 0.0015);
   }, { passive: false });
 
-  canvas.addEventListener('touchmove', (e) => {
-    if (e.touches.length !== 2) return;
-    e.preventDefault();
-    const d = Math.hypot(
-      e.touches[0].clientX - e.touches[1].clientX,
-      e.touches[0].clientY - e.touches[1].clientY);
-    if (pinch) renderer.move((d - pinch) * 0.01 * renderer.travelScale(), 0, 0);
-    pinch = d;
-  }, { passive: false });
-
-  canvas.addEventListener('touchend', () => { pinch = 0; });
-
-  canvas.addEventListener('dblclick', () => {
-    if (renderer.hovered >= 0) flyToNode(renderer.hovered);
+  // Pick at the tap itself: touch has no hover.
+  canvas.addEventListener('click', (e) => {
+    if (travel > 8) return;
+    const rect = canvas.getBoundingClientRect();
+    renderer.mouse.x = e.clientX - rect.left;
+    renderer.mouse.y = e.clientY - rect.top;
+    const hit = renderer.pick(rect.width, rect.height);
+    if (hit < 0) clearSelection();
+    else if (renderer.marked === nodeAt(hit).rank) flyToNode(hit);
+    else select(hit);
   });
 
   bindFlight();
@@ -450,6 +457,10 @@ function releaseLabel(id) {
 }
 
 function reveal() {
+  if (matchMedia('(pointer: coarse)').matches) {
+    document.getElementById('hint').textContent =
+      'Drag to look, pinch to fly, tap a domain twice to focus';
+  }
   for (const el of document.querySelectorAll('#readout, #controls, #hint')) {
     el.hidden = false;
   }
@@ -503,13 +514,6 @@ function hideOverlay() {
 
 
 function bindControls() {
-  const canvas = document.getElementById('orb');
-
-  canvas.addEventListener('click', () => {
-    if (renderer.hovered >= 0) select(renderer.hovered);
-    else clearSelection();
-  });
-
   document.getElementById('c-fit').onclick = fit;
   document.getElementById('c-random').onclick = focusRandom;
   document.getElementById('c-pause').onclick = togglePause;

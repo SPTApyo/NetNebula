@@ -311,7 +311,7 @@ dd {
     left: calc(var(--step) * 3);
     bottom: calc(var(--step) * 3);
     width: 320px;
-    max-height: calc(100vh - 260px);
+    max-height: calc(100dvh - 260px);
     overflow-y: auto;
     padding: 18px 18px 8px;
 }
@@ -518,6 +518,10 @@ kbd {
     animation: rise 900ms cubic-bezier(0.16, 1, 0.3, 1) 120ms backwards;
 }
 
+#detail:not([hidden]) ~ #hint {
+    display: none;
+}
+
 #hint:not([hidden]) {
     animation: fade 1200ms ease 9s forwards;
 }
@@ -544,6 +548,7 @@ kbd {
     }
 
     #mark > p {
+        max-width: calc(100% - 130px);
         font-size: 13px;
     }
 
@@ -567,15 +572,74 @@ kbd {
         display: none;
     }
 
+    #detail .d-title {
+        font-size: 20px;
+    }
+
     #detail {
         left: calc(var(--step) * 2);
         right: calc(var(--step) * 2);
         bottom: calc(var(--step) * 2 + 60px);
         width: auto;
-        max-height: 46vh;
+        max-height: 46dvh;
     }
 
     #hint {
         display: none;
+    }
+}
+
+/* Phones in landscape: little height, so detail moves right. */
+@media (max-height: 520px) {
+    #mark {
+        width: min(320px, calc(100vw - var(--step) * 4 - 330px));
+    }
+
+    #mark > p,
+    #readout,
+    #hint {
+        display: none;
+    }
+
+    #detail {
+        top: calc(var(--step) * 9);
+        right: calc(var(--step) * 2);
+        bottom: calc(var(--step) * 9);
+        left: auto;
+        width: 300px;
+        max-height: none;
+    }
+}
+
+@media (pointer: coarse) {
+    /* Below 16px iOS zooms on focus. */
+    #search {
+        font-size: 16px;
+    }
+
+    kbd {
+        display: none;
+    }
+
+    #controls button {
+        min-height: 44px;
+    }
+
+    #theme {
+        width: 44px;
+        height: 44px;
+    }
+
+    #search-results button,
+    .d-near button {
+        padding: 9px 14px;
+    }
+
+    .d-close {
+        padding: 9px 14px;
+    }
+
+    #detail .d-title {
+        padding-right: 80px;
     }
 }

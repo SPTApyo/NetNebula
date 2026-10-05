@@ -487,6 +487,7 @@ export class Renderer {
     this.marked = -1;
     this.onPick = null;
     this.mouse = { x: -1, y: -1, moved: false };
+    this.reach = matchMedia('(pointer: coarse)').matches ? 28 : 16;
     this.running = false;
     this.idleAt = 0;
   }
@@ -593,7 +594,7 @@ export class Renderer {
     if (!this.positions || !this.mvp) return -1;
     const m = this.mvp;
     let best = -1;
-    let bestDistance = 16 * 16;
+    let bestDistance = this.reach * this.reach;
 
     for (let i = 0; i < this.count; i++) {
       const x = this.positions[i * 3];
