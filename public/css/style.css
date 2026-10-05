@@ -66,12 +66,17 @@ body {
     border-radius: 6px;
 }
 
-/* Surfaces flip theme one by one as a wave front reaches them. */
+/* Surfaces flip theme one by one as a wave front crosses them.
+   Own color so children never inherit the page theme early. */
+.surface {
+    color: var(--ink);
+}
+
 .surface,
 .surface * {
-    transition: color 180ms ease, background-color 180ms ease,
-                border-color 180ms ease, fill 180ms ease, stroke 180ms ease,
-                box-shadow 180ms ease;
+    transition: color var(--sweep, 180ms) ease, background-color var(--sweep, 180ms) ease,
+                border-color var(--sweep, 180ms) ease, fill var(--sweep, 180ms) ease,
+                stroke var(--sweep, 180ms) ease, box-shadow var(--sweep, 180ms) ease;
 }
 
 #orb {
@@ -106,6 +111,7 @@ body {
 #mark,
 #corner,
 #readout,
+#starmap,
 #detail,
 #controls {
     position: fixed;
@@ -113,6 +119,7 @@ body {
 }
 
 #readout,
+#starmap,
 #detail,
 #controls,
 #corner {
@@ -130,6 +137,12 @@ body {
     top: calc(var(--step) * 3);
     left: calc(var(--step) * 3);
     width: min(320px, calc(100vw - var(--step) * 6 - 120px));
+}
+
+/* Fit content so the wave reaches the text, not an empty box. */
+#mark h1,
+#mark > p {
+    width: fit-content;
 }
 
 #mark h1 {
@@ -303,6 +316,69 @@ dd {
     margin-top: 10px;
     color: var(--ink-3);
     font-size: 12px;
+}
+
+/* Star map legend and settings. */
+
+#starmap {
+    right: calc(var(--step) * 3);
+    bottom: calc(var(--step) * 3 + 64px);
+    width: 252px;
+    padding: 12px 16px 6px;
+}
+
+#sm-classes {
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+}
+
+#sm-classes li {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    color: var(--ink-2);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+#sm-classes li::before {
+    content: "";
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--star);
+    box-shadow: 0 0 8px var(--star);
+}
+
+.sm-key {
+    margin: 10px 0 4px;
+    color: var(--ink-3);
+    font-size: 12px;
+    text-wrap: pretty;
+}
+
+#starmap .row {
+    align-items: center;
+    color: var(--ink-2);
+    font-size: 13px;
+}
+
+#starmap .row:last-child {
+    border-bottom: 0;
+}
+
+#sm-time {
+    flex: 1;
+    max-width: 150px;
+    accent-color: var(--accent);
+}
+
+#sm-links {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
 }
 
 /* Selected domain. */
@@ -514,6 +590,7 @@ kbd {
 }
 
 #readout:not([hidden]),
+#starmap:not([hidden]),
 #controls:not([hidden]) {
     animation: rise 900ms cubic-bezier(0.16, 1, 0.3, 1) 120ms backwards;
 }
@@ -561,6 +638,17 @@ kbd {
         display: none;
     }
 
+    #starmap {
+        left: calc(var(--step) * 2);
+        right: calc(var(--step) * 2);
+        bottom: calc(var(--step) * 2 + 60px);
+        width: auto;
+    }
+
+    #detail:not([hidden]) ~ #starmap {
+        display: none;
+    }
+
     #controls {
         left: calc(var(--step) * 2);
         right: calc(var(--step) * 2);
@@ -597,6 +685,7 @@ kbd {
 
     #mark > p,
     #readout,
+    #starmap,
     #hint {
         display: none;
     }

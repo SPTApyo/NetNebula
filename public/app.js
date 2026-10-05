@@ -1,4 +1,4 @@
-import { Renderer, aim, WAVE_SPEED } from './gl.js';
+import { Renderer, aim, waveSpeed } from './gl.js';
 
 const DIM_FACTOR = 0.25;
 
@@ -20,10 +20,23 @@ const THEMES = {
     sky: [0.933, 0.945, 0.965],
     hot: [0.153, 0.259, 0.839],
     crest: [1.0, 0.80, 0.52],
-    look: [0.40, 0.72, 1],
+    look: [0.52, 1.0, 1],
     label: [0.36, 0.70]
   }
 };
+
+// Spectral classes, coolest first, with the colour each one shows.
+const CLASSES = [
+  ['M', [1.0, 0.55, 0.38]],
+  ['K', [1.0, 0.74, 0.5]],
+  ['G', [1.0, 0.92, 0.76]],
+  ['F', [1.0, 0.98, 0.94]],
+  ['A', [0.86, 0.9, 1.0]],
+  ['B', [0.7, 0.8, 1.0]],
+  ['O', [0.58, 0.68, 1.0]]
+];
+
+const PLANETS = 8;
 
 const nf = new Intl.NumberFormat('en-US');
 
@@ -31,6 +44,7 @@ let renderer = null;
 let paused = false;
 let graph = null;
 let order = [];
+let selected = -1;
 
 document.addEventListener('DOMContentLoaded', main);
 
@@ -83,7 +97,34 @@ function toNodes(g) {
     nodes[g.edges[k]].neighbours.add(g.edges[k + 1]);
     nodes[g.edges[k + 1]].neighbours.add(g.edges[k]);
   }
+  classify(nodes);
   return nodes;
+}
+
+// Star map reading: temperature is the percentile of links to over
+// linked from, glow the percentile of linked from, size log hosts.
+function classify(nodes) {
+  const last = Math.max(nodes.length - 1, 1);
+  const ratio = (n) => (n.out + 1) / (n.inn + 1);
+  [...nodes].sort((a, b) => ratio(a) - ratio(b)).forEach((n, i) => { n.temp = i / last; });
+  [...nodes].sort((a, b) => a.inn - b.inn).forEach((n, i) => { n.lum = i / last; });
+  const top = Math.log(1 + Math.max(...nodes.map((n) => n.hosts)));
+  for (const n of nodes) {
+    n.starSize = 1.2 + 7 * Math.pow(Math.log(1 + n.hosts) / top, 1.5);
+    const c = n.temp * (CLASSES.length - 1);
+    const k = Math.min(CLASSES.length - 2, Math.floor(c));
+    const [from, to] = [CLASSES[k][1], CLASSES[k + 1][1]];
+    n.starRgb = from.map((v, i) => v + (to[i] - v) * (c - k));
+    const slot = n.temp * CLASSES.length;
+    const cls = Math.min(CLASSES.length - 1, Math.floor(slot));
+    n.spectral = `${CLASSES[cls][0]}${9 - Math.min(9, Math.floor((slot - cls) * 10))}`;
+  }
+}
+
+function starCss(node, theme) {
+  const k = theme === 'light' ? 0.55 : 1;
+  const [r, g, b] = node.starRgb.map((v) => Math.round(v * k * 255));
+  return `rgb(${r},${g},${b})`;
 }
 
 function hueOf(group) {
@@ -158,6 +199,8 @@ function upload() {
   const dims = new Float32Array(count);
   const phases = new Float32Array(count);
   const amps = new Float32Array(count);
+  const starColors = new Float32Array(count * 3);
+  const stars = new Float32Array(count * 2);
 
   const crowd = crowding(nodes);
 
@@ -173,6 +216,9 @@ function upload() {
     phases[i] = ((i * 2654435761) % 4096) / 4096 * Math.PI * 2;
     sizes[i] = 1.1 + 8.4 * Math.pow(1 - Math.log(1 + i) / span, 2);
     amps[i] = SWAY / (1 + Math.sqrt(node.neighbours.size) * 0.55);
+    starColors.set(node.starRgb, i * 3);
+    stars[i * 2] = node.lum;
+    stars[i * 2 + 1] = node.starSize;
   }
 
   const edges = graph.edges;
@@ -215,7 +261,8 @@ function upload() {
 
   renderer.upload({
     positions, sizes, tones, ranks, dims, phases, amps,
-    edgePositions, edgeTones, edgeBoost, edgeDims, edgePhases, edgeAmps
+    edgePositions, edgeTones, edgeBoost, edgeDims, edgePhases, edgeAmps,
+    starColors, stars
   });
   renderer.nodes = nodes;
 }
@@ -417,6 +464,11 @@ function select(index) {
   const node = nodeAt(index);
   if (!node) return;
   renderer.marked = node.rank;
+  selected = index;
+  const planets = [...node.neighbours].sort((a, b) => a - b).slice(0, PLANETS);
+  renderer.setSystem(starmap() ? [node.x, node.y, node.z] : null,
+    planets.map((i) => ({ index: i, color: order[i].starRgb, size: 0.08 + 0.03 * order[i].starSize })),
+    node.starRgb);
 
   const panel = document.getElementById('detail');
   panel.querySelector('.d-title').textContent = node.name;
@@ -427,9 +479,13 @@ function select(index) {
   panel.querySelector('.d-hosts').textContent = nf.format(node.hosts);
   panel.querySelector('.d-in').textContent = nf.format(node.inn);
   panel.querySelector('.d-out').textContent = nf.format(node.out);
+  panel.querySelector('.d-class').textContent = node.spectral;
+  panel.querySelector('.d-class-row').hidden = !starmap();
+  panel.querySelector('.d-near-block h3').textContent =
+    starmap() ? 'Orbiting domains' : 'Linked domains';
 
   const list = panel.querySelector('.d-near');
-  list.replaceChildren(...[...node.neighbours].sort((a, b) => a - b).slice(0, 6)
+  list.replaceChildren(...planets.slice(0, starmap() ? PLANETS : 6)
     .map((i) => {
       const item = document.createElement('li');
       const button = document.createElement('button');
@@ -445,7 +501,8 @@ function select(index) {
 }
 
 function clearSelection() {
-  if (renderer) renderer.marked = -1;
+  selected = -1;
+  if (renderer) { renderer.marked = -1; renderer.setSystem(null); }
   document.getElementById('detail').hidden = true;
 }
 
@@ -517,6 +574,8 @@ function bindControls() {
   document.getElementById('c-fit').onclick = fit;
   document.getElementById('c-random').onclick = focusRandom;
   document.getElementById('c-pause').onclick = togglePause;
+  document.getElementById('c-star').onclick = toggleStarmap;
+  mountStarmap();
   document.querySelector('.d-close').onclick = clearSelection;
 
   document.addEventListener('keydown', (event) => {
@@ -527,6 +586,7 @@ function bindControls() {
       case 'h': focusRandom(); break;
       case 'p': togglePause(); break;
       case 'l': toggleTheme(); break;
+      case 'm': toggleStarmap(); break;
       case 'escape': clearSelection(); break;
       default: return;
     }
@@ -541,8 +601,8 @@ function bindTheme() {
   button.onclick = toggleTheme;
 }
 
-// Each surface carries its own theme and flips when a front reaches it,
-// so stacked waves stay in step with the map.
+// Each surface carries its own theme. Its fade starts when the front
+// touches it and lasts while the front crosses it.
 function toggleTheme() {
   const next = currentTheme() === 'light' ? 'dark' : 'light';
   const box = document.getElementById('theme').getBoundingClientRect();
@@ -556,12 +616,18 @@ function toggleTheme() {
   const animate = !REDUCED_MOTION;
   if (renderer) renderer.setTheme(next, x, y, animate);
 
+  const speed = waveSpeed(innerWidth, innerHeight);
   for (const el of document.querySelectorAll('.surface')) {
     const r = el.getBoundingClientRect();
-    const dx = Math.max(r.left - x, 0, x - r.right);
-    const dy = Math.max(r.top - y, 0, y - r.bottom);
-    const delay = animate ? Math.hypot(dx, dy) / WAVE_SPEED : 0;
-    setTimeout(() => { el.dataset.theme = next; }, delay);
+    const near = Math.hypot(Math.max(r.left - x, 0, x - r.right),
+      Math.max(r.top - y, 0, y - r.bottom));
+    const far = Math.hypot(Math.max(Math.abs(r.left - x), Math.abs(r.right - x)),
+      Math.max(Math.abs(r.top - y), Math.abs(r.bottom - y)));
+    const sweep = animate ? Math.max(180, (far - near) / speed) : 0;
+    setTimeout(() => {
+      el.style.setProperty('--sweep', `${sweep}ms`);
+      el.dataset.theme = next;
+    }, animate ? near / speed : 0);
   }
   document.documentElement.dataset.theme = next;
   document.getElementById('theme').setAttribute('aria-pressed', String(next === 'light'));
@@ -586,7 +652,13 @@ function mountLabels() {
     const placed = [];
     let used = 0;
 
-    for (const a of candidates) {
+    const starmap = renderer.star > 0.5;
+    const planets = starmap ? renderer.planets : [];
+    const orbiting = new Set(planets.map((p) => p.index));
+    const items = planets.map((p) => ({ ...order[p.index], x: p.pos[0], y: p.pos[1], z: p.pos[2] }))
+      .concat(candidates.filter((a) => !orbiting.has(a.index)));
+
+    for (const a of items) {
       if (used >= MAX_LABELS) break;
       if (a.dim < 1) continue;
       const w = m[3] * a.x + m[7] * a.y + m[11] * a.z + m[15];
@@ -616,7 +688,8 @@ function mountLabels() {
         pool[used] = el;
       }
       el.textContent = a.name;
-      el.style.color = cssColor(a, renderer.themeAt(px, py, now));
+      const theme = renderer.themeAt(px, py, now);
+      el.style.color = starmap ? starCss(a, theme) : cssColor(a, theme);
       el.style.transform = `translate(${Math.round(px)}px, ${Math.round(py)}px)`;
       el.style.opacity = '1';
       used += 1;
@@ -701,6 +774,32 @@ function focusRandom() {
 
   const node = order[Math.floor(Math.random() * order.length)];
   if (node) flyToNode(node.index);
+}
+
+function starmap() {
+  return Boolean(renderer && renderer.starmap);
+}
+
+function mountStarmap() {
+  document.getElementById('sm-classes').replaceChildren(...CLASSES.slice().reverse().map(([name, rgb]) => {
+    const item = document.createElement('li');
+    item.textContent = name;
+    item.style.setProperty('--star', `rgb(${rgb.map((v) => Math.round(v * 255)).join(',')})`);
+    return item;
+  }));
+  const time = document.getElementById('sm-time');
+  time.oninput = () => { renderer.timeScale = Number(time.value); };
+  const links = document.getElementById('sm-links');
+  links.onchange = () => { renderer.showLinks = links.checked; };
+}
+
+function toggleStarmap() {
+  if (!renderer) return;
+  renderer.starmap = !renderer.starmap;
+  document.getElementById('c-star').setAttribute('aria-pressed', String(renderer.starmap));
+  document.getElementById('starmap').hidden = !renderer.starmap;
+  document.getElementById('readout').hidden = renderer.starmap;
+  if (selected >= 0) select(selected);
 }
 
 function togglePause() {

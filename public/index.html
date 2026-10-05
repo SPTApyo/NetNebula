@@ -26,10 +26,10 @@
     <canvas id="orb" aria-label="Three-dimensional map of links between web domains" role="img"></canvas>
     <div id="labels" aria-hidden="true"></div>
 
-    <header id="mark" class="surface">
-        <h1>NetNebula</h1>
-        <p>The most linked domains on the web, drawn as one map.</p>
-        <search id="finder">
+    <header id="mark">
+        <h1 class="surface">NetNebula</h1>
+        <p class="surface">The most linked domains on the web, drawn as one map.</p>
+        <search id="finder" class="surface">
             <input id="search" type="search" placeholder="Find a domain"
                 autocomplete="off" spellcheck="false" aria-label="Find a domain"
                 aria-controls="search-results">
@@ -68,6 +68,7 @@
             <div class="row"><dt>Hosts</dt><dd class="d-hosts"></dd></div>
             <div class="row"><dt>Linked from</dt><dd class="d-in"></dd></div>
             <div class="row"><dt>Links to</dt><dd class="d-out"></dd></div>
+            <div class="row d-class-row" hidden><dt>Class</dt><dd class="d-class"></dd></div>
         </dl>
         <div class="d-near-block">
             <h3>Linked domains</h3>
@@ -80,7 +81,16 @@
         <button type="button" id="c-fit"><span>View all</span><kbd>T</kbd></button>
         <button type="button" id="c-random"><span>Random</span><kbd>H</kbd></button>
         <button type="button" id="c-pause" aria-pressed="false"><span>Pause</span><kbd>P</kbd></button>
+        <button type="button" id="c-star" aria-pressed="false"><span>Star map</span><kbd>M</kbd></button>
     </nav>
+
+    <section id="starmap" class="surface" aria-label="Star map" hidden>
+        <ol id="sm-classes" aria-label="Spectral classes, hottest first"></ol>
+        <p class="sm-key">Colour: links to against linked from. Size: hosts. Glow: linked from.</p>
+        <label class="row"><span>Time</span>
+            <input id="sm-time" type="range" min="0" max="4" step="0.1" value="1"></label>
+        <label class="row"><span>Links</span><input id="sm-links" type="checkbox"></label>
+    </section>
 
     <p id="hint" hidden>Drag to look, WASD to fly, double-click a domain to focus</p>
 
