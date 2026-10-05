@@ -1,6 +1,6 @@
 {
   "name": "netnebula",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A 3D map of the most linked domains on the web, built from the Common Crawl web graph.",
   "private": true,
   "scripts": {
