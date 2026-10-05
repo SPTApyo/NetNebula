@@ -28,3 +28,6 @@ result-*
 .DS_Store
 .impeccable/
 docs/superpowers/
+
+# Pipeline cache (tldextract)
+.cache/
